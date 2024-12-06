@@ -17,7 +17,7 @@ const {
 } = require("../../modules/ratelimit/accountRatelimiter");
 //const redis = require("../../app");
 
-const { updatePost, deletePost } = require("../controllers/postControllers");
+//const { updatePost, deletePost } = require("../controllers/postControllers");
 
 //สร้างโพสต์
 router.post("/", upload.array("image", 6), async (req, res) => {
