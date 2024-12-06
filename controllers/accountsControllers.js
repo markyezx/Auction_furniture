@@ -123,9 +123,9 @@ const sendEmailVerification = async (req, res) => {
 
       await sendVerifyEmail(email, "Verify Email For Healworld.me", link);
 
-      //const accessToken = req.headers["authorization"].replace("Bearer ", "");
+      const accessToken = req.headers["authorization"].replace("Bearer ", "");
 
-      //await redis.sAdd(`Used_Access_Token_${req.user.userId}`, accessToken);
+      await redis.sAdd(`Used_Access_Token_${req.user.userId}`, accessToken);
 
       const newAccessToken = jwt.sign(
         { userId: req.user.userId, name: req.user.name, email: req.user.email },

@@ -187,18 +187,18 @@ const sendEmail = async (email, subject, text) => {
 
         await transporter.sendMail(mailOptions, function (error, info) {
             if (error) {
-                //console.log(error)
+                console.log(error)
 
-                //res.status(400).send({ message: 'Error sending mail', error: error });
+                res.status(400).send({ message: 'Error sending mail', error: error });
             } else {
-                //console.log('Email sent: ' + info.response);
-                //res.status(200).send({ message: 'Mail Successfully Sent' });
+                console.log('Email sent: ' + info.response);
+                res.status(200).send({ message: 'Mail Successfully Sent' });
             }
         });
 
     } catch (error) {
-        //console.log(error);
-        //res.status(500).send({ message: 'Error sending mail', error: error});
+        console.log(error);
+        res.status(500).send({ message: 'Error sending mail', error: error});
     }
 };
 
