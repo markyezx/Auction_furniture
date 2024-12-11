@@ -127,6 +127,12 @@ io.on("connection", (socket) => {
 
 //! V1 Endpoints
 //? Index Endpoints
+const v1OrderRouter = require("./routes/v1/orderRoutes");
+app.use("/api/v1/order", v1OrderRouter);
+
+const v1ProductRouter = require("./routes/v1/productRoutes");
+app.use("/api/v1/products", v1ProductRouter);
+
 const v1IndexRouter = require("./routes/v1/indexRoutes");
 app.use("/api/v1", v1IndexRouter);
 
