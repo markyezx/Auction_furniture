@@ -1,26 +1,24 @@
 // routes/v1/productRoutes.js
 const express = require("express");
-const Product = require("../../schemas/v1/products.js");
+const Product = require("../../schemas/v1/products.js"); // ใช้ Product schema
 const router = express.Router();
 
 // Create Product
 router.post('/', async (req, res) => {
   try {
-      const { user, products, shippingAddress, paymentStatus } = req.body;
-      const totalPrice = products.reduce((total, item) => total + item.quantity * item.price, 0);
-
-      const newOrder = new Order({
-          user,
-          products,
-          totalPrice,
-          shippingAddress,
-          paymentStatus,
+      const { name, price, description, inStock } = req.body;
+      const newProduct = new Product({
+          name,
+          price,
+          description,
+          inStock,
       });
 
-      await newOrder.save();
-      res.status(201).json(newOrder);
+      await newProduct.save();
+      res.status(201).json(newProduct);
   } catch (err) {
-      res.status(500).json({ message: 'Error creating order', error: err });
+      console.error("Error creating product:", err.message);
+      res.status(500).json({ message: 'Error creating product', error: err.message });
   }
 });
 
@@ -30,6 +28,7 @@ router.get("/", async (req, res) => {
     const products = await Product.find();
     res.status(200).json(products);
   } catch (error) {
+    console.error("Error fetching products:", error.message);
     res.status(500).json({ error: "Unable to fetch products", details: error.message });
   }
 });
@@ -41,6 +40,7 @@ router.get("/:id", async (req, res) => {
     if (!product) return res.status(404).json({ error: "Product not found" });
     res.status(200).json(product);
   } catch (error) {
+    console.error("Error fetching product:", error.message);
     res.status(500).json({ error: "Unable to fetch product", details: error.message });
   }
 });
@@ -48,10 +48,11 @@ router.get("/:id", async (req, res) => {
 // Update Product
 router.put("/:id", async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
     if (!product) return res.status(404).json({ error: "Product not found" });
     res.status(200).json(product);
   } catch (error) {
+    console.error("Error updating product:", error.message);
     res.status(500).json({ error: "Unable to update product", details: error.message });
   }
 });
@@ -63,6 +64,7 @@ router.delete("/:id", async (req, res) => {
     if (!product) return res.status(404).json({ error: "Product not found" });
     res.status(200).json({ message: "Product deleted successfully" });
   } catch (error) {
+    console.error("Error deleting product:", error.message);
     res.status(500).json({ error: "Unable to delete product", details: error.message });
   }
 });
