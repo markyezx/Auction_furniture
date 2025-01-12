@@ -4,7 +4,6 @@ const router = express.Router();
 const Order = require("../../schemas/v1/order");
 
 // Create Order
-// Create Order
 router.post("/", async (req, res) => {
   try {
     const { user, products } = req.body;
