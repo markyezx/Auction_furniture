@@ -1,70 +1,117 @@
 const mongoose = require("mongoose");
 
-// สร้าง Collection ชื่อ auction
+// สร้าง Schema สำหรับการประมูล
 const auctionSchema = new mongoose.Schema(
   {
-    businessId: { type: String, required: true }, // ID ของธุรกิจ
-    auctionId: { type: String, unique: true, required: true }, // ID ของการประมูล
+    businessId: { type: String, required: true },
+    auctionId: { type: String, unique: true, required: true },
     organizationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "organization",
       required: true,
     },
-    itemName: { type: String, required: true }, // ชื่อของสินค้าที่ประมูล
-    itemImage: { type: String, required: true }, // รูปของสินค้าที่ประมูล
-    description: { type: String, required: true }, // รายละเอียดของสินค้าที่ประมูล
-    startingBid: { type: Number, required: true, min: 0 }, // ราคาเริ่มต้นประมูล
-    currentBid: { type: Number, default: 0, min: 0 }, // ราคาสูงสุดที่ประมูลในขณะนี้
-    bidIncrement: { type: Number, required: true, min: 1 }, // ขั้นต่ำที่เพิ่มในการประมูล
-    endTime: { type: Date, required: true }, // เวลาสิ้นสุดของการประมูล
+    itemName: { type: String, required: true },
+    itemImage: { type: String, required: true },
+    description: { type: String, required: true },
+    startingBid: { type: Number, required: true, min: 0 },
+    currentBid: { type: Number, default: 0, min: 0 },
+    bidIncrement: { type: Number, required: true, min: 1 },
+    endTime: { type: Date, required: true },
     participants: [
       {
-        userId: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true }, // ผู้เข้าร่วมประมูล
-        bidAmount: { type: Number, required: true, min: 0 }, // จำนวนเงินที่เสนอ
-        bidTime: { type: Date, default: Date.now }, // เวลาที่เสนอราคา
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
+        bidAmount: { type: Number, required: true, min: 0 },
+        bidTime: { type: Date, default: Date.now },
       },
-    ], // รายชื่อผู้เข้าร่วมและการเสนอราคา
+    ],
     winner: {
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: "user" }, // ผู้ชนะการประมูล
-      winningBid: { type: Number, min: 0 }, // ราคาที่ชนะการประมูล
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
+      winningBid: { type: Number, min: 0 },
     },
-    createdAt: { type: Date, default: Date.now }, // เวลาที่สร้างการประมูล
+    notifications: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
+        message: { type: String },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
+    status: {
+      type: String,
+      enum: ["open", "closed", "cancelled"],
+      default: "open",
+    },
+    createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
 
+// ตรวจสอบเวลาสิ้นสุดของการประมูล
 auctionSchema.pre("save", function (next) {
-  // ตรวจสอบว่า endTime ต้องไม่อยู่ในอดีต
   if (this.endTime < Date.now()) {
     return next(new Error("เวลาที่สิ้นสุดของการประมูลต้องไม่อยู่ในอดีต"));
   }
   next();
 });
 
-// สำหรับอัปเดตราคาประมูล
-auctionSchema.methods.updateBid = async function (userId, bidAmount) {
-  if (bidAmount < this.currentBid + this.bidIncrement) {
-    throw new Error("Bid amount must be higher than the current bid plus the bid increment.");
+// ฟังก์ชันปิดประมูล
+auctionSchema.methods.closeAuction = async function () {
+  if (this.status !== "open") {
+    throw new Error("Auction is already closed or cancelled.");
   }
-  this.currentBid = bidAmount;
-  this.participants.push({ userId, bidAmount });
+
+  const winner = this.participants.reduce((max, p) =>
+    p.bidAmount > (max?.bidAmount || 0) ? p : max
+  , null);
+
+  if (winner) {
+    this.winner = {
+      userId: winner.userId,
+      winningBid: winner.bidAmount,
+    };
+    this.notifications.push({
+      userId: winner.userId,
+      message: `Congratulations! You won the auction for "${this.itemName}" with a bid of ${winner.bidAmount}.`,
+    });
+  }
+
+  this.participants.forEach((participant) => {
+    if (!winner || !participant.userId.equals(winner.userId)) {
+      this.notifications.push({
+        userId: participant.userId,
+        message: `The auction for "${this.itemName}" has ended. Thank you for your participation!`,
+      });
+    }
+  });
+
+  this.status = "closed";
   return this.save();
 };
 
-auctionSchema.index({ endTime: 1 });
-
-// ฟังก์ชันดึงข้อมูลประมูลพร้อมข้อมูลผู้เข้าร่วม (Populate)
-const getAuctionWithParticipants = async (auctionId) => {
-  try {
-    const auction = await mongoose.model("auction").findOne({ auctionId })
-      .populate("participants.userId") // ทำการ populate ข้อมูลผู้ใช้ใน participants
-      .exec();
-
-    return auction;
-  } catch (err) {
-    console.log("Error fetching auction data:", err);
-    throw err;
+// อัปเดตราคาประมูล
+auctionSchema.methods.updateBid = async function (userId, bidAmount) {
+  if (this.status !== "open" || this.endTime < Date.now()) {
+    throw new Error("Auction is closed or has expired.");
   }
+
+  const lastBid = this.participants.find(
+    (p) => p.userId.equals(userId)
+  );
+
+  // ป้องกันไม่ให้ผู้ใช้บิดซ้ำภายใน 1 นาที
+  if (lastBid && Date.now() - new Date(lastBid.bidTime) < 60 * 1000) {
+    throw new Error("You must wait 1 minute before placing another bid.");
+  }
+
+  if (bidAmount < this.currentBid + this.bidIncrement) {
+    throw new Error("Bid amount must be higher than the current bid plus the bid increment.");
+  }
+
+  // อัปเดตราคาปัจจุบันและเวลาสิ้นสุด
+  this.currentBid = bidAmount;
+  this.endTime = new Date(Date.now() + 5 * 60 * 1000); // ขยายเวลา 5 นาที
+  this.participants.push({ userId, bidAmount, bidTime: new Date() });
+
+  return this.save();
 };
 
 // Export โมเดล

@@ -1,10 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Auction = require("../../schemas/v1/auction.schema");
-const UserBid = require("../../schemas/v1/userbid.schema");
-const User = require("../../schemas/v1/user.schema");
-const Organization = require("../../schemas/v1/organization.schema");
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 // Create Auction
 router.post("/", async (req, res) => {
@@ -20,16 +17,15 @@ router.post("/", async (req, res) => {
       bidIncrement,
     } = req.body;
 
-    // Validation
     if (!businessId || !auctionId || !organizationId || !itemName || !itemImage || !description) {
       return res.status(400).json({ message: "Missing required fields" });
     }
+
     if (startingBid <= 0 || bidIncrement <= 0) {
       return res.status(400).json({ message: "Starting bid and bid increment must be greater than 0" });
     }
 
-    // กำหนด endTime เป็น 2 นาทีหลังจากเวลาปัจจุบัน
-    const endTime = new Date(Date.now() + 2 * 60 * 1000); // เพิ่ม 2 นาที (120,000 มิลลิวินาที)
+    const endTime = new Date(Date.now() + 10 * 60 * 1000);
 
     const newAuction = new Auction({
       businessId,
@@ -42,6 +38,7 @@ router.post("/", async (req, res) => {
       currentBid: startingBid,
       bidIncrement,
       endTime,
+      status: "open",
     });
 
     await newAuction.save();
@@ -51,53 +48,8 @@ router.post("/", async (req, res) => {
     res.status(500).json({ message: "Internal server error", error: error.message || error });
   }
 });
-/*router.post("/", async (req, res) => {
-  try {
-    const {
-      businessId,
-      auctionId,
-      organizationId,
-      itemName,
-      itemImage,
-      description,
-      startingBid,
-      bidIncrement,
-      endTime,
-    } = req.body;
 
-    // Validation
-    if (!businessId || !auctionId || !organizationId || !itemName || !itemImage || !description) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
-    if (startingBid <= 0 || bidIncrement <= 0) {
-      return res.status(400).json({ message: "Starting bid and bid increment must be greater than 0" });
-    }
-    if (new Date(endTime) <= Date.now()) {
-      return res.status(400).json({ message: "End time must be in the future" });
-    }
-
-    const newAuction = new Auction({
-      businessId,
-      auctionId,
-      organizationId,
-      itemName,
-      itemImage,
-      description,
-      startingBid,
-      currentBid: startingBid,
-      bidIncrement,
-      endTime,
-    });
-
-    await newAuction.save();
-    res.status(201).json(newAuction);
-  } catch (error) {
-    console.error("Error creating auction:", error.message);
-    res.status(500).json({ message: "Internal server error", error: error.message || error });
-  }
-});*/
-
-// API สำหรับการเพิ่ม bid ใหม่
+// Place a bid
 router.post("/:auctionId/bid", async (req, res) => {
   try {
     const { auctionId } = req.params;
@@ -112,12 +64,36 @@ router.post("/:auctionId/bid", async (req, res) => {
       return res.status(404).json({ message: "Auction not found" });
     }
 
-    if (bidAmount < auction.currentBid + auction.bidIncrement) {
-      return res.status(400).json({ message: "Bid amount must be higher than the current bid plus the bid increment" });
+    if (auction.status !== "open") {
+      return res.status(400).json({ message: "Auction is not open for bidding." });
     }
 
+    if (new Date(auction.endTime) <= Date.now()) {
+      return res.status(400).json({ message: "Auction has already ended." });
+    }
+
+    const lastBid = auction.participants.find(
+      (p) => p.userId.toString() === userId
+    );
+
+    // ตรวจสอบว่าผู้ใช้คนเดิมไม่สามารถบิดซ้ำใน 1 นาที
+    if (lastBid && Date.now() - new Date(lastBid.bidTime) < 60 * 1000) {
+      return res.status(400).json({
+        message: "You must wait 1 minute before placing another bid.",
+      });
+    }
+
+    if (bidAmount < auction.currentBid + auction.bidIncrement) {
+      return res.status(400).json({
+        message: "Bid amount must be higher than the current bid plus the bid increment",
+      });
+    }
+
+    // อัปเดตราคาและเพิ่มข้อมูลผู้เข้าร่วม
     auction.currentBid = bidAmount;
-    auction.participants.push({ userId, bidAmount });
+    auction.endTime = new Date(Date.now() + 5 * 60 * 1000); // ขยายเวลา 5 นาที
+    auction.participants.push({ userId, bidAmount, bidTime: new Date() });
+
     await auction.save();
 
     res.status(200).json({ message: "Bid placed successfully", auction });
@@ -127,59 +103,195 @@ router.post("/:auctionId/bid", async (req, res) => {
   }
 });
 
-// Get all auctions
-router.get("/:auctionId", async (req, res) => {
+// Declare Winner Automatically
+router.put("/:auctionId/close", async (req, res) => {
   try {
     const { auctionId } = req.params;
-    const singleAuction = await Auction.findOne({ auctionId })
-      .populate("organizationId participants.userId");
 
-    if (!singleAuction) {
+    const auction = await Auction.findOne({ auctionId });
+    if (!auction) {
       return res.status(404).json({ message: "Auction not found" });
     }
 
-    res.status(200).json(singleAuction);
-  } catch (error) {
-    console.error("Error retrieving auction:", error);
-    res.status(500).json({ message: "Error retrieving auction", error });
-  }
-});
-
-// Endpoint สำหรับประกาศผู้ชนะ
-router.put("/auction/:auctionId/declare-winner", async (req, res) => {
-  try {
-    const { auctionId } = req.params;
-
-    // ค้นหา auction
-    const auction = await Auction.findOne({ auctionId });
-    if (!auction) {
-      return res.status(404).json({ error: "Auction not found" });
+    if (auction.status !== "open") {
+      return res.status(400).json({ message: "Auction is already closed or cancelled." });
     }
 
-    // เรียกใช้ฟังก์ชันประกาศผู้ชนะ
-    await auction.declareWinner();
+    if (new Date(auction.endTime) > Date.now()) {
+      return res.status(400).json({
+        message: "Auction is still active. You cannot close it manually.",
+      });
+    }
+
+    // เรียกใช้ฟังก์ชันปิดประมูล
+    await auction.closeAuction();
 
     res.status(200).json({
-      message: "Winner declared successfully",
+      message: "Auction closed successfully",
       winner: auction.winner,
     });
   } catch (error) {
-    console.error("Error declaring winner:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error closing auction:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
   }
 });
 
-// Delete Auction
+// Declare Winner
+router.put("/:auctionId/declare-winner", async (req, res) => {
+  try {
+    const { auctionId } = req.params;
+
+    const auction = await Auction.findOne({ auctionId });
+    if (!auction) {
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    // ตรวจสอบสถานะของการประมูล
+    if (auction.status !== "open") {
+      return res.status(400).json({ message: "Auction is not open for declaring winner." });
+    }
+
+    // หากเวลาหมด แต่สถานะยังเปิดอยู่ ให้ปิดการประมูลก่อน
+    if (new Date(auction.endTime) <= Date.now()) {
+      auction.status = "closed";
+    }
+
+    // ค้นหาผู้ชนะจาก participants
+    const winner = auction.participants.reduce((max, p) =>
+      p.bidAmount > (max?.bidAmount || 0) ? p : max
+    , null);
+
+    // อัปเดตผู้ชนะ
+    auction.winner = winner
+      ? { userId: winner.userId, winningBid: winner.bidAmount }
+      : null;
+
+    // ปิดสถานะการประมูล
+    auction.status = "closed";
+    await auction.save();
+
+    res.status(200).json({ message: "Winner declared successfully", winner });
+  } catch (error) {
+    console.error("Error declaring winner:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+});
+
+
+// Get all auctions with Pagination
+router.get("/", async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+
+    const auctions = await Auction.find()
+      .sort({ endTime: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .exec();
+
+    const count = await Auction.countDocuments();
+
+    res.status(200).json({
+      auctions,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+    });
+  } catch (error) {
+    console.error("Error fetching auctions:", error);
+    res.status(500).json({ message: "Error fetching auctions", error });
+  }
+});
+
+router.get("/:auctionId/winner", async (req, res) => {
+  try {
+    const { auctionId } = req.params;
+
+    const auction = await Auction.findOne({ auctionId });
+
+    if (!auction) {
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    // หากเวลาหมด และสถานะยังเป็น open ให้ปิดประมูลและคำนวณผู้ชนะ
+    if (auction.status === "open" && new Date(auction.endTime) <= Date.now()) {
+      const winner = auction.participants.reduce((max, p) =>
+        p.bidAmount > (max?.bidAmount || 0) ? p : max
+      , null);
+
+      auction.winner = winner
+        ? { userId: winner.userId, winningBid: winner.bidAmount }
+        : null;
+      auction.status = "closed";
+      await auction.save();
+    }
+
+    // ส่งข้อมูลผู้ชนะ (หากไม่มีผู้ชนะ จะส่ง null)
+    res.status(200).json({
+      message: "Winner details",
+      winner: auction.winner,
+      status: auction.status,
+    });
+  } catch (error) {
+    console.error("Error fetching winner:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+});
+
+// Get Notifications for User
+router.get("/:auctionId/notifications/:userId", async (req, res) => {
+  try {
+    const { auctionId, userId } = req.params;
+    const auction = await Auction.findOne({ auctionId });
+
+    if (!auction) {
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    // ดึงการแจ้งเตือนทั้งหมดของผู้ใช้
+    const userNotifications = auction.notifications.filter((notif) =>
+      notif.userId.equals(userId)
+    );
+
+    // ตรวจสอบว่าผู้ใช้เป็นผู้ชนะหรือไม่
+    const isWinner =
+      auction.winner && auction.winner.userId.equals(userId);
+
+    if (isWinner) {
+      userNotifications.push({
+        message: `Congratulations! You are the winner of the auction "${auction.itemName}" with a bid of ${auction.winner.winningBid}.`,
+        timestamp: auction.updatedAt, // ใช้เวลาที่ประมูลถูกปิด
+      });
+    }
+
+    res.status(200).json({ notifications: userNotifications });
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+});
+
+
+
+// Delete Auction with Safe Deletion
 router.delete("/:auctionId", async (req, res) => {
   try {
     const { auctionId } = req.params;
-    const deletedAuction = await Auction.findByIdAndDelete(auctionId);
-    if (!deletedAuction) {
+    const auction = await Auction.findOne({ auctionId });
+
+    if (!auction) {
       return res.status(404).json({ message: "Auction not found" });
     }
-    res.status(200).json({ message: "Auction deleted successfully" });
+
+    if (auction.participants.length > 0) {
+      return res.status(400).json({ message: "Cannot delete auction with participants." });
+    }
+
+    auction.status = "cancelled";
+    await auction.save();
+
+    res.status(200).json({ message: "Auction cancelled successfully." });
   } catch (error) {
-    res.status(500).json({ message: "Error deleting auction", error });
+    res.status(500).json({ message: "Error cancelling auction", error });
   }
 });
 
