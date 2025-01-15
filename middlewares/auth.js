@@ -4,7 +4,34 @@ const JWT_REFRESH_TOKEN_SECRET = process.env.JWT_REFRESH_TOKEN_SECRET;
 const SUPER_ADMIN_API_KEY = process.env.SUPER_ADMIN_API_KEY;
 const redis = require("../app");
 
-const { TokenExpiredError } = jwt;
+// Middleware: ตรวจสอบ accessToken และดึงข้อมูล userId, role
+const authenticate = (req, res, next) => {
+  const accessToken = req.headers["authorization"]?.replace("Bearer ", "");
+  if (!accessToken) {
+    return res
+      .status(401)
+      .json({ status: "error", message: "Access token is required." });
+  }
+
+  jwt.verify(accessToken, JWT_ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return accessTokenCatchError(err, res);
+    }
+    req.user = decoded; // แนบข้อมูล user ไปกับ request
+    next();
+  });
+};
+
+// Middleware: ตรวจสอบ role
+const authorize = (allowedRoles) => (req, res, next) => {
+  const userRole = req.user?.role;
+  if (!userRole || !allowedRoles.includes(userRole)) {
+    return res
+      .status(403)
+      .json({ status: "error", message: "Access denied. Insufficient permissions." });
+  }
+  next();
+};
 
 const accessTokenCatchError = (err, res) => {
   if (err instanceof TokenExpiredError) {
@@ -153,4 +180,4 @@ const verifyAPIKey = (req, res, next) => {
   next();
 };
 
-module.exports = { verifyAccessToken, verifyRefreshToken, verifyAPIKey };
+module.exports = { verifyAccessToken, verifyRefreshToken, verifyAPIKey , authorize , authenticate };
