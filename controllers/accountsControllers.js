@@ -218,52 +218,96 @@ const sendPhoneVerification = async (req, res) => {
 };
 
 const verifyEmail = async (req, res) => {
-  let email = req.query.email;
-  let ref = req.query.ref;
-  let token = req.query.token;
+  const email = req.query.email;
+  const ref = req.query.ref;
+  const token = req.query.token;
 
   if (!email) {
-    return res.status(400).send({ status: "error", message: "Email can not be empty!" });
+    return res.status(400).send({ status: "error", message: "Email cannot be empty!" });
   }
 
   if (!ref) {
-    return res.status(400).send({ status: "error", message: "Ref Code can not be empty!" });
+    return res.status(400).send({ status: "error", message: "Ref Code cannot be empty!" });
   }
 
   if (!token) {
-    return res.status(400).send({ status: "error", message: "Pin Code can not be empty!" });
+    return res.status(400).send({ status: "error", message: "Token cannot be empty!" });
   }
 
   try {
     console.log("------> user.email = ", email);
-    let findUser = await user.findOne({ "user.email": email });
+
+    // Find the user by email
+    const findUser = await user.findOne({ "user.email": email });
 
     if (!findUser) {
       return res.status(404).send({ status: "error", message: "Code is invalid or expired." });
     }
 
-    //let activationToken = await redis.get(email);
-    let activationToken = await redis.hGetAll(email);
+    // Retrieve activation token from Redis
+    const activationToken = await redis.hGetAll(email);
 
-    if (token !== activationToken.token && ref !== activationToken.ref) {
+    // Verify token and ref
+    if (token !== activationToken.token || ref !== activationToken.ref) {
       return res.status(404).send({ status: "error", message: "Code is invalid or expired." });
-    } else {
-      await user.updateOne(
-        { "user.email": email },
-        { "user.activated": true, "user.verified.email": true, "user.verified.phone": true }
-      );
-      await redis.del(email);
-
-      //res.status(200).send({ message: 'E-mail has been successfully verified!'});
-      res.redirect("https://www.jaidee-dev.shop/emailverified");
     }
+
+    // Update user verification status
+    await user.updateOne(
+      { "user.email": email },
+      {
+        "user.activated": true,
+        "user.verified.email": true,
+        "user.verified.phone": true,
+      }
+    );
+
+    // Remove token from Redis
+    await redis.del(email);
+
+    // Display intermediate page before redirecting to YouTube
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Email Verified</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+          }
+          h1 {
+            color: #4CAF50;
+          }
+          p {
+            font-size: 18px;
+            color: #555;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>การยืนยันอีเมลสำเร็จ!</h1>
+        <p>กรุณารอสักครู่ เรากำลังพาคุณไปยังหน้าถัดไป...</p>
+        <script>
+          setTimeout(() => {
+            window.location.href = "https://www.youtube.com/watch?v=P5sHZRicEXg";
+          }, 5000); // 5 วินาที
+        </script>
+      </body>
+      </html>
+    `);
   } catch (err) {
-    console.error(err);
-    res
-      .status(500)
-      .send({ status: "error", message: err.message || "Some error occurred while trying to verify email." });
+    console.error("Error during email verification:", err);
+    res.status(500).send({
+      status: "error",
+      message: err.message || "Some error occurred while trying to verify email.",
+    });
   }
 };
+
 
 const verifyPhone = async (req, res) => {
   let email = req.query.email;

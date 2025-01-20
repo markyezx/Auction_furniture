@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const Joi = require("joi");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
@@ -26,6 +27,8 @@ const regularUserData = require("../schemas/v1/userData/regularUserData.schema")
 const organizationUserData = require("../schemas/v1/userData/organizationUserData.schema");
 const contactInfoSchema = require("../schemas/v1/contact.schema");
 const addressSchema = require("../schemas/v1/address.schema");
+
+const MAX_DEVICES = 50;
 
 const register = async (req, res) => {
   if (!req.body) {
@@ -152,102 +155,108 @@ const register = async (req, res) => {
   }
 };
 
-const login = async (req, res, next) => {
-  console.log("login function");
+// Schema สำหรับ validate headers
+const headerSchema = Joi.object({
+  "device-fingerprint": Joi.string().required().messages({
+    "any.required": "Device fingerprint is required!",
+    "string.base": "Device fingerprint must be a string!",
+  }),
+  businessid: Joi.string().required().messages({
+    "any.required": "Business ID is required!",
+    "string.base": "Business ID must be a string!",
+  }),
+}).unknown(true);
 
-  if (!req.headers["device-fingerprint"]) {
-    return res
-      .status(401)
-      .send({ status: "error", message: "Device fingerprint is required!" });
+// Schema สำหรับ validate body
+const bodySchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    "any.required": "Email is required!",
+    "string.email": "Invalid email format!",
+  }),
+  password: Joi.string().required().messages({
+    "any.required": "Password is required!",
+    "string.base": "Password must be a string!",
+  }),
+});
+
+// Middleware สำหรับ validate headers
+const validateHeaders = (req, res, next) => {
+  const { error } = headerSchema.validate(req.headers);
+  if (error) {
+    return res.status(400).send({ status: "error", message: error.message });
   }
+  next();
+};
 
-  const deviceFingerprint = req.headers["device-fingerprint"];
-  const businessId = req.headers["businessid"];
-
-  if (!businessId) {
-    return res
-      .status(400)
-      .send({ status: "error", message: "Business ID is required!" });
+// Middleware สำหรับ validate body
+const validateBody = (req, res, next) => {
+  const { error } = bodySchema.validate(req.body);
+  if (error) {
+    return res.status(400).send({ status: "error", message: error.message });
   }
+  next();
+};
 
-  passport.authenticate(
-    "local",
-    { session: false },
-    async (err, foundUser, info) => {
-      console.log(`login : ${foundUser}`);
-      if (err) return next(err);
+const generateToken = (payload, secret, expiresIn) =>
+  jwt.sign(payload, secret, { expiresIn });
 
-      if (foundUser) {
+const login = [
+  validateHeaders, // Middleware สำหรับ validate headers
+  validateBody, // Middleware สำหรับ validate body
+  async (req, res, next) => {
+    try {
+      console.log("login function");
+
+      const deviceFingerprint = req.headers["device-fingerprint"];
+      const businessId = req.headers["businessid"];
+      const { email, password } = req.body;
+
+      passport.authenticate("local", { session: false }, async (err, foundUser, info) => {
+        if (err) return next(err);
+
+        if (!foundUser) {
+          return res
+            .status(info.statusCode || 401)
+            .send({ status: "error", message: info.message });
+        }
+
         console.log("login : found user");
 
         const loggedInDevices = foundUser.loggedInDevices || [];
-        if (loggedInDevices.length >= 50) {
+        if (loggedInDevices.length >= MAX_DEVICES) {
           return res
             .status(403)
             .send({ status: "error", message: "Login limit exceeded." });
         }
 
-        const foundUserEmail = foundUser.user.email;
-        const foundUserId = foundUser.userId;
+        const { name, phone, activated, verified, imageURL } = foundUser.user;
+        const { _id: userId } = foundUser;
 
-        const accessToken = jwt.sign(
-          {
-            userId: foundUserId,
-            name: foundUser.user.name,
-            email: foundUserEmail,
-            businessId: businessId,
-          },
+        // Generate Tokens
+        const accessToken = generateToken(
+          { userId, name, email, businessId },
           process.env.JWT_ACCESS_TOKEN_SECRET,
-          { expiresIn: process.env.ACCESS_TOKEN_EXPIRES }
+          process.env.ACCESS_TOKEN_EXPIRES
         );
-        const refreshToken = jwt.sign(
-          {
-            userId: foundUserId,
-            name: foundUser.user.name,
-            email: foundUserEmail,
-            businessId: businessId,
-          },
+
+        const refreshToken = generateToken(
+          { userId, name, email, businessId },
           process.env.JWT_REFRESH_TOKEN_SECRET,
-          { expiresIn: process.env.REFRESH_TOKEN_EXPIRES }
-        );
-        await redis.sAdd(
-          `Device_Fingerprint_${foundUserId}`,
-          deviceFingerprint
+          process.env.REFRESH_TOKEN_EXPIRES
         );
 
-        redis.set(`Last_Login_${foundUserId}_${deviceFingerprint}`, Date.now());
-
-        let length = 6,
-          charset = "0123456789",
-          refreshTokenOTP = "";
-        for (let i = 0, n = charset.length; i < length; ++i) {
-          refreshTokenOTP += charset.charAt(Math.floor(Math.random() * n));
-        }
-
-        redis.set(
-          `Last_Refresh_Token_OTP_${foundUserId}_${deviceFingerprint}`,
-          refreshTokenOTP
-        );
-        redis.set(
-          `Last_Refresh_Token_${foundUserId}_${deviceFingerprint}`,
-          refreshToken
-        );
-        redis.set(
-          `Last_Access_Token_${foundUserId}_${deviceFingerprint}`,
-          accessToken
-        );
-
+        // Save Last Login in User's loggedInDevices
         const deviceIndex = loggedInDevices.findIndex(
           (device) => device.deviceFingerprint === deviceFingerprint
         );
 
         if (deviceIndex === -1) {
           await User.updateOne(
-            { _id: foundUser._id },
+            { _id: userId },
             {
               $push: {
                 loggedInDevices: {
-                  deviceFingerprint: deviceFingerprint,
+                  deviceFingerprint,
                   lastLogin: Date.now(),
                 },
               },
@@ -256,43 +265,42 @@ const login = async (req, res, next) => {
         } else {
           loggedInDevices[deviceIndex].lastLogin = Date.now();
           await User.updateOne(
-            { _id: foundUser._id },
-            { $set: { loggedInDevices: loggedInDevices } }
+            { _id: userId },
+            { $set: { loggedInDevices } }
           );
         }
+
+        // Set Secure Cookies
+        res.cookie("accessToken", accessToken, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "strict",
+          maxAge: parseInt(process.env.ACCESS_TOKEN_EXPIRES, 10) * 1000, // แปลงวินาทีเป็นมิลลิวินาที
+        });
+        
+        res.cookie("refreshToken", refreshToken, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "strict",
+          maxAge: parseInt(process.env.REFRESH_TOKEN_EXPIRES, 10) * 1000, // แปลงวินาทีเป็นมิลลิวินาที
+        });
 
         res.status(200).send({
           status: "success",
           message: "Successfully Login",
           data: {
-            userId: foundUser._id,
-            user: {
-              name: foundUser.user.name,
-              email: foundUserEmail,
-              phone: foundUser.user.phone,
-              activated: foundUser.user.activated,
-              verified: {
-                email: foundUser.user.verified.email,
-                phone: foundUser.user.verified.phone,
-              },
-            },
-            imageURL: foundUser.user.imageURL,
-            tokens: {
-              accessToken: accessToken,
-              refreshToken: refreshToken,
-              refreshTokenOTP: refreshTokenOTP,
-            },
+            userId,
+            user: { name, email, phone, activated, verified },
+            imageURL,
           },
         });
-      } else {
-        console.log("login error");
-        return res
-          .status(info.statusCode)
-          .send({ status: "error", message: info.message });
-      }
+      })(req, res, next);
+    } catch (error) {
+      console.error("Login Error:", error);
+      next(error);
     }
-  )(req, res, next);
-};
+  },
+];
 
 const logout = async (req, res, next) => {
   console.log("logout function");
