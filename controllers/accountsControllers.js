@@ -217,6 +217,7 @@ const sendPhoneVerification = async (req, res) => {
   }
 };
 
+
 const verifyEmail = async (req, res) => {
   const email = req.query.email;
   const ref = req.query.ref;

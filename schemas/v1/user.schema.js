@@ -1,4 +1,6 @@
 const mongoose = require("mongoose");
+const addressSchema = require("./address.schema");
+const contactInfoSchema = require("./contact.schema");
 
 const UserSchema = new mongoose.Schema(
   {
@@ -12,6 +14,7 @@ const UserSchema = new mongoose.Schema(
       },
       phone: { type: String },
       password: { type: String },
+      token: { type: String },
       activated: { type: Boolean, default: false },
       verified: {
         email: { type: Boolean, default: false },
@@ -19,6 +22,39 @@ const UserSchema = new mongoose.Schema(
       },
     },
     lang: { type: String, default: "TH" },
+    deviceFingerPrint: [
+      { deviceType: { type: String }, fingerPrint: { type: String } },
+    ],
+    groups: [
+      {
+        groupId: { type: String },
+        roleInGroup: { type: String },
+        statusInGroup: { type: String },
+      },
+    ],
+    chatGroups: [
+      {
+        chatGroupId: { type: String },
+        roleInChatGroup: { type: String },
+        statusInChatGroup: { type: String },
+      },
+    ],
+    userType: {
+      type: String,
+      required: true,
+      enum: ["regular", "organization", "sponsor"],
+    },
+    userData: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      refPath: "userTypeData",
+    },
+    userTypeData: {
+      type: String,
+      required: true,
+      enum: ["RegularUserData", "OrganizationUserData"],
+    },
+    businessId: { type: String },
     loggedInDevices: [
       {
         deviceFingerprint: { type: String, required: true },

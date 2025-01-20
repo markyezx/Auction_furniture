@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 
-const sendEmail = async (email, subject = 'กรุณายืนยันอีเมลของคุณ', text) => {
+const sendEmail = async (email, subject, text) => {
     try {
         const transporter = nodemailer.createTransport({
             host: process.env.MAIL_HOST,
@@ -19,6 +19,7 @@ const sendEmail = async (email, subject = 'กรุณายืนยันอ�
             }
         });
 
+        // Updated HTML template for auction system
         const html = `
             <!doctype html>
             <html>
@@ -88,7 +89,7 @@ const sendEmail = async (email, subject = 'กรุณายืนยันอ�
         const mailOptions = {
             from: `Auction System Support <${process.env.MAIL_USERNAME}>`,
             to: email,
-            subject: subject, // แก้หัวข้อเป็น "กรุณายืนยันอีเมลของคุณ"
+            subject: subject,
             text: text,
             html: html,
         };

@@ -9,6 +9,7 @@
     "docker:build": "docker build -t healworld-pos-backend ."
   },
   "dependencies": {
+    "@hapi/joi": "^17.1.1",
     "ali-oss": "^6.18.0",
     "apicache": "^1.6.3",
     "axios": "^1.4.0",

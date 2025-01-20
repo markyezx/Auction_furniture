@@ -1,11 +1,11 @@
 const bcrypt = require("bcrypt");
-const Joi = require("joi");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
 const passport = require("passport");
 const bodyParser = require("body-parser");
 const { OAuth2Client } = require("google-auth-library");
+const Joi = require('joi');
 
 require("../middlewares/passport/passport-local");
 //require('../middlewares/passport/passport-jwt');
@@ -284,7 +284,7 @@ const login = [
           sameSite: "strict",
           maxAge: parseInt(process.env.REFRESH_TOKEN_EXPIRES, 10) * 1000, // แปลงวินาทีเป็นมิลลิวินาที
         });
-
+        
         res.status(200).send({
           status: "success",
           message: "Successfully Login",
