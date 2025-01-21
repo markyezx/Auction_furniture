@@ -303,61 +303,105 @@ const login = [
 ];
 
 const logout = async (req, res, next) => {
-  console.log("logout function");
-
-  if (!req.headers["device-fingerprint"]) {
-    return res
-      .status(401)
-      .send({ status: "error", message: "Device fingerprint is required!" });
-  }
-
-  const deviceFingerprint = req.headers["device-fingerprint"];
-  const businessId = req.headers["businessid"];
-
-  if (!businessId) {
-    return res
-      .status(400)
-      .send({ status: "error", message: "Business ID is required!" });
-  }
-
-  const userId = req.user.userId; // assuming req.user contains authenticated user data
+  console.log("Logout function triggered");
 
   try {
-    // Find user by userId
-    const foundUser = await User.findById(userId);
-
-    if (!foundUser) {
-      return res
-        .status(404)
-        .send({ status: "error", message: "User not found" });
+    // ตรวจสอบ Device Fingerprint
+    const deviceFingerprint = req.headers["device-fingerprint"];
+    if (!deviceFingerprint) {
+      return res.status(400).send({
+        status: "error",
+        message: "Device fingerprint is required!",
+      });
     }
 
-    // Remove device from loggedInDevices
+    // ตรวจสอบ Business ID
+    const businessId = req.headers["businessid"];
+    if (!businessId) {
+      return res.status(400).send({
+        status: "error",
+        message: "Business ID is required!",
+      });
+    }
+
+    // ตรวจสอบ User ID จาก Middleware
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).send({
+        status: "error",
+        message: "Unauthorized user!",
+      });
+    }
+
+    // ค้นหา User
+    const foundUser = await User.findById(userId);
+    if (!foundUser) {
+      return res.status(404).send({
+        status: "error",
+        message: "User not found!",
+      });
+    }
+
+    // ตรวจสอบว่าอุปกรณ์ตรงกับที่ล็อกอินไว้
+    const deviceIndex = foundUser.loggedInDevices.findIndex(
+      (device) =>
+        device.deviceFingerprint === deviceFingerprint &&
+        device.businessId === businessId
+    );
+
+    if (deviceIndex === -1) {
+      return res.status(400).send({
+        status: "error",
+        message: "Device not found or mismatched!",
+      });
+    }
+
+    // กรองอุปกรณ์ที่ต้องการออกจาก loggedInDevices
     const updatedDevices = foundUser.loggedInDevices.filter(
       (device) => device.deviceFingerprint !== deviceFingerprint
     );
 
-    // Update user with filtered devices
+    // อัปเดต loggedInDevices ในฐานข้อมูล
     await User.updateOne(
-      { _id: foundUser._id },
+      { _id: userId },
       { $set: { loggedInDevices: updatedDevices } }
     );
 
-    // Remove related data from Redis
-    await redis.sRem(`Device_Fingerprint_${userId}`, deviceFingerprint);
-    await redis.del(`Last_Login_${userId}_${deviceFingerprint}`);
-    await redis.del(`Last_Refresh_Token_OTP_${userId}_${deviceFingerprint}`);
-    await redis.del(`Last_Refresh_Token_${userId}_${deviceFingerprint}`);
-    await redis.del(`Last_Access_Token_${userId}_${deviceFingerprint}`);
+    // ลบข้อมูลที่เกี่ยวข้องจาก Redis
+    const redisKeys = [
+      `Device_Fingerprint_${userId}`,
+      `Last_Login_${userId}_${deviceFingerprint}`,
+      `Last_Refresh_Token_OTP_${userId}_${deviceFingerprint}`,
+      `Last_Refresh_Token_${userId}_${deviceFingerprint}`,
+      `Last_Access_Token_${userId}_${deviceFingerprint}`,
+    ];
 
+    const redisPromises = redisKeys.map((key) => redis.del(key));
+    await Promise.all(redisPromises);
+
+    // ลบ Cookies ที่เกี่ยวข้อง
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+    });
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+    });
+
+    // ส่งข้อความยืนยัน
     res.status(200).send({
       status: "success",
-      message: "Successfully Logged Out",
+      message: "Successfully logged out.",
     });
   } catch (err) {
-    next(err);
+    console.error("Logout Error:", err);
+    next(err); // ส่ง Error ไปยัง Error Handler Middleware
   }
 };
+
 
 const refresh = async (req, res, next) => {
   //console.log('req.user', req.user);

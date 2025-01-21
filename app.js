@@ -126,7 +126,7 @@ io.on("connection", (socket) => {
 });
 
 //! V1 Endpoints
-//? Index Endpoints
+
 const v1UserBidRoutes = require("./routes/v1/userbidRoutes"); // เพิ่มเส้นทางสำหรับ UserBid
 app.use("/api/v1/userbids", v1UserBidRoutes); // เชื่อมต่อ UserBid routes
 
