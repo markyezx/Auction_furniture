@@ -306,26 +306,47 @@ const logout = async (req, res, next) => {
   console.log("Logout function triggered");
 
   try {
-    // ตรวจสอบ Device Fingerprint
+    // ดึง Refresh Token จาก Secure Cookie
+    const refreshToken = req.cookies?.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).send({
+        status: "error",
+        message: "Refresh token is required!",
+      });
+    }
+
+    // ตรวจสอบและถอดรหัส Refresh Token
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET);
+    } catch (err) {
+      console.error("JWT Verification Error:", err);
+      return res.status(401).send({
+        status: "error",
+        message:
+          err.name === "TokenExpiredError"
+            ? "Refresh token has expired!"
+            : "Invalid refresh token!",
+      });
+    }
+
+    const userId = decoded?.userId;
     const deviceFingerprint = req.headers["device-fingerprint"];
+    const businessId = req.headers["businessid"];
+
+    // ตรวจสอบข้อมูลสำคัญ
     if (!deviceFingerprint) {
       return res.status(400).send({
         status: "error",
         message: "Device fingerprint is required!",
       });
     }
-
-    // ตรวจสอบ Business ID
-    const businessId = req.headers["businessid"];
     if (!businessId) {
       return res.status(400).send({
         status: "error",
         message: "Business ID is required!",
       });
     }
-
-    // ตรวจสอบ User ID จาก Middleware
-    const userId = req.user?.userId;
     if (!userId) {
       return res.status(401).send({
         status: "error",
@@ -342,23 +363,11 @@ const logout = async (req, res, next) => {
       });
     }
 
-    // ตรวจสอบว่าอุปกรณ์ตรงกับที่ล็อกอินไว้
-    const deviceIndex = foundUser.loggedInDevices.findIndex(
-      (device) =>
-        device.deviceFingerprint === deviceFingerprint &&
-        device.businessId === businessId
-    );
-
-    if (deviceIndex === -1) {
-      return res.status(400).send({
-        status: "error",
-        message: "Device not found or mismatched!",
-      });
-    }
-
-    // กรองอุปกรณ์ที่ต้องการออกจาก loggedInDevices
+    // ตรวจสอบและกรองอุปกรณ์
     const updatedDevices = foundUser.loggedInDevices.filter(
-      (device) => device.deviceFingerprint !== deviceFingerprint
+      (device) =>
+        device.deviceFingerprint !== deviceFingerprint ||
+        device.businessId !== businessId
     );
 
     // อัปเดต loggedInDevices ในฐานข้อมูล
@@ -379,7 +388,7 @@ const logout = async (req, res, next) => {
     const redisPromises = redisKeys.map((key) => redis.del(key));
     await Promise.all(redisPromises);
 
-    // ลบ Cookies ที่เกี่ยวข้อง
+    // ลบ Secure Cookies
     res.clearCookie("accessToken", {
       httpOnly: true,
       secure: true,
@@ -401,7 +410,6 @@ const logout = async (req, res, next) => {
     next(err); // ส่ง Error ไปยัง Error Handler Middleware
   }
 };
-
 
 const refresh = async (req, res, next) => {
   //console.log('req.user', req.user);
