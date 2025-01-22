@@ -201,8 +201,8 @@ const generateToken = (payload, secret, expiresIn) =>
   jwt.sign(payload, secret, { expiresIn });
 
 const login = [
-  validateHeaders, // Middleware สำหรับ validate headers
-  validateBody, // Middleware สำหรับ validate body
+  validateHeaders,
+  validateBody,
   async (req, res, next) => {
     try {
       console.log("login function");
@@ -245,7 +245,6 @@ const login = [
           process.env.REFRESH_TOKEN_EXPIRES
         );
 
-        // Save Last Login in User's loggedInDevices
         const deviceIndex = loggedInDevices.findIndex(
           (device) => device.deviceFingerprint === deviceFingerprint
         );
@@ -270,7 +269,6 @@ const login = [
           );
         }
 
-        // Set Secure Cookies
         res.cookie("accessToken", accessToken, {
           httpOnly: true,
           secure: true,
@@ -315,7 +313,6 @@ const logout = async (req, res, next) => {
       });
     }
 
-    // ตรวจสอบและถอดรหัส Refresh Token
     let decoded;
     try {
       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET);
@@ -334,7 +331,6 @@ const logout = async (req, res, next) => {
     const deviceFingerprint = req.headers["device-fingerprint"];
     const businessId = req.headers["businessid"];
 
-    // ตรวจสอบข้อมูลสำคัญ
     if (!deviceFingerprint) {
       return res.status(400).send({
         status: "error",
@@ -363,7 +359,6 @@ const logout = async (req, res, next) => {
       });
     }
 
-    // ตรวจสอบและกรองอุปกรณ์
     const updatedDevices = foundUser.loggedInDevices.filter(
       (device) =>
         device.deviceFingerprint !== deviceFingerprint ||
@@ -376,7 +371,6 @@ const logout = async (req, res, next) => {
       { $set: { loggedInDevices: updatedDevices } }
     );
 
-    // ลบข้อมูลที่เกี่ยวข้องจาก Redis
     const redisKeys = [
       `Device_Fingerprint_${userId}`,
       `Last_Login_${userId}_${deviceFingerprint}`,
@@ -400,14 +394,13 @@ const logout = async (req, res, next) => {
       sameSite: "strict",
     });
 
-    // ส่งข้อความยืนยัน
     res.status(200).send({
       status: "success",
       message: "Successfully logged out.",
     });
   } catch (err) {
     console.error("Logout Error:", err);
-    next(err); // ส่ง Error ไปยัง Error Handler Middleware
+    next(err);
   }
 };
 
