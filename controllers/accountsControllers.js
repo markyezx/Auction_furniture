@@ -13,54 +13,77 @@ const sendResetPasswordEmail = require("../modules/email/sendResetPasswordEmail"
 const user = require("../schemas/v1/user.schema");
 
 const changePassword = async (req, res) => {
-  if (!req.body) {
-    res.status(400).send({ status: "error", message: "Content can not be empty!" });
-    return;
-  }
+  try {
+    // ตรวจสอบว่ามีข้อมูลใน request body
+    if (!req.body || !req.body.password) {
+      return res.status(400).send({ status: "error", message: "Password is required." });
+    }
 
-  if (!req.body.password) {
-    return res.status(400).send({ status: "error", message: "Password can not be empty!" });
-  }
+    const rawPassword = req.body.password;
 
-  if (req.body.password.length < 8) {
-    return res.status(400).send({ status: "error", message: "Password needs to be more than 8 characters!" });
-  }
+    // ตรวจสอบความยาวและความปลอดภัยของรหัสผ่าน
+    if (rawPassword.length < 8) {
+      return res.status(400).send({
+        status: "error",
+        message: "Password must be at least 8 characters long.",
+      });
+    }
 
-  const userId = req.params.user;
-  const rawPassword = req.body.password;
-  const hashedPassword = await bcrypt.hash(rawPassword, 10);
+    const passwordStrengthRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordStrengthRegex.test(rawPassword)) {
+      return res.status(400).send({
+        status: "error",
+        message:
+          "Password must include at least one uppercase letter, one lowercase letter, one number, and one special character.",
+      });
+    }
 
-  await user
-    .findOneAndUpdate(
+    // ตรวจสอบ userId จาก params และ validate รูปแบบ email
+    const userId = req.params.user;
+    if (!userId || !/^\S+@\S+\.\S+$/.test(userId)) {
+      return res.status(400).send({
+        status: "error",
+        message: "Invalid user email format.",
+      });
+    }
+
+    // เข้ารหัสรหัสผ่านก่อนบันทึก
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+    // ค้นหาและอัปเดตข้อมูลผู้ใช้
+    const userData = await user.findOneAndUpdate(
       { "user.email": userId },
       { "user.password": hashedPassword },
       { useFindAndModify: false, new: true }
-    )
-    .then(async (data) => {
-      if (!data) {
-        await res.status(404).send({
-          status: "error",
-          message: `Cannot update user ${userId}, maybe the user was not found.`,
-        });
-      } else {
-        let checkResetPassword = await redis.get(`${userId}-resetPassword`);
+    );
 
-        if (checkResetPassword) {
-          await redis.del(`${userId}-resetPassword`);
-        }
+    if (!userData) {
+      return res.status(404).send({
+        status: "error",
+        message: `Cannot update password. User with email ${userId} not found.`,
+      });
+    }
 
-        await res
-          .status(200)
-          .send({
-            authenticated_user: req.user,
-            status: "success",
-            message: `User ${userId} password has been updated`,
-          });
-      }
-    })
-    .catch((err) => {
-      res.status(500).send({ status: "error", message: `Error updating user ${userId}. Error: ${err}` });
+    // ตรวจสอบ flag resetPassword ใน Redis และลบออกหากมี
+    const resetPasswordFlag = await redis.get(`${userId}-resetPassword`);
+    if (resetPasswordFlag) {
+      await redis.del(`${userId}-resetPassword`);
+    }
+
+    // ตอบกลับผู้ใช้เมื่อเปลี่ยนรหัสผ่านสำเร็จ
+    return res.status(200).send({
+      authenticated_user: req.user,
+      status: "success",
+      message: `Password for user ${userId} has been successfully updated.`,
     });
+  } catch (err) {
+    console.error("Error updating password:", err.message);
+    return res.status(500).send({
+      status: "error",
+      message: `An error occurred while updating the password. Please try again later.`,
+    });
+  }
 };
 
 const resetPassword = async (req, res) => {
@@ -81,7 +104,7 @@ const resetPassword = async (req, res) => {
       const newTempPassword = password;
       let hashedPassword = await bcrypt.hash(newTempPassword, 10);
 
-      await sendResetPasswordEmail(email, "Request To Change Password For Healworld.me", newTempPassword);
+      await sendResetPasswordEmail(email, "Request To Change Password For Auctions.me", newTempPassword);
       await user.updateOne({ "user.email": email }, { "user.password": hashedPassword });
       redis.set(`${email}-resetPassword`, "true");
 

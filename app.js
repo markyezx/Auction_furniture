@@ -126,12 +126,8 @@ io.on("connection", (socket) => {
 });
 
 //! V1 Endpoints
-
-const v1UserBidRoutes = require("./routes/v1/userbidRoutes"); // เพิ่มเส้นทางสำหรับ UserBid
-app.use("/api/v1/userbids", v1UserBidRoutes); // เชื่อมต่อ UserBid routes
-
-const v1AuctionRoutes = require("./routes/v1/auctionRoutes");
-app.use("/api/v1/auction", v1AuctionRoutes);
+const v1AuctionRouter = require("./routes/v1/auctionRoutes");
+app.use("/api/v1/auction", v1AuctionRouter);
 
 const v1OrderRouter = require("./routes/v1/orderRoutes");
 app.use("/api/v1/order", v1OrderRouter);

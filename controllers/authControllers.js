@@ -263,16 +263,16 @@ const login = async (req, res) => {
 
       res.cookie("accessToken", accessToken, {
         httpOnly: true,
-        secure: true,
+        secure: process.env.NODE_ENV === "production", // เปิดเฉพาะเมื่อใช้ HTTPS
         sameSite: "strict",
-        maxAge: parseInt(process.env.ACCESS_TOKEN_EXPIRES, 10) * 1000,
+        maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
       });
-
+      
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
-        secure: true,
+        secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
-        maxAge: parseInt(process.env.REFRESH_TOKEN_EXPIRES, 10) * 1000,
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
       });
 
       res.status(200).send({
