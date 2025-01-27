@@ -121,7 +121,7 @@ const sendEmailVerification = async (req, res) => {
 
       const link = `${process.env.BASE_URL}/api/v1/accounts/verify/email?email=${email}&ref=${refKey}&token=${activationToken}`;
 
-      await sendVerifyEmail(email, "Verify Email For Healworld.me", link);
+      await sendVerifyEmail(email, "Verify Email For Acutions", link);
 
       const accessToken = req.headers["authorization"].replace("Bearer ", "");
 
@@ -294,7 +294,7 @@ const verifyEmail = async (req, res) => {
         <p>กรุณารอสักครู่ เรากำลังพาคุณไปยังหน้าถัดไป...</p>
         <script>
           setTimeout(() => {
-            window.location.href = "https://www.youtube.com/watch?v=P5sHZRicEXg";
+            window.location.href = "https://www.youtube.com/watch?v=M3VGsumz7XA&list=RDM3VGsumz7XA&start_radio=1";
           }, 5000); // 5 วินาที
         </script>
       </body>
