@@ -12,7 +12,7 @@ const { verifyAccessToken, verifyRefreshToken } = require('../../middlewares/aut
 router.patch("/password/change/:user", changePassword);
 
 //? Reset Password
-router.post("/password/reset/:email", resetPassword);
+router.post("/password/reset", resetPassword);
 
 //? Send Email Verification
 router.post("/verification/email/:email", verifyAccessToken, sendEmailVerification);

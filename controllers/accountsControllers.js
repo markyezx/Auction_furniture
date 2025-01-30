@@ -87,38 +87,47 @@ const changePassword = async (req, res) => {
 };
 
 const resetPassword = async (req, res) => {
-  //return res.status(200).send({ status: 'success', message: 'New password has been sent to your email address.'});
-  let email = req.params.email;
-
   try {
+    let { email } = req.body; // ✅ รับอีเมลจาก body
+
+    if (!email) {
+      return res.status(400).send({ status: "error", message: "Email is required" });
+    }
+
     let findUser = await user.findOne({ "user.email": email });
 
-    if (findUser) {
-      let length = 8,
-        charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz",
-        password = "";
-      for (let i = 0, n = charset.length; i < length; ++i) {
-        password += charset.charAt(Math.floor(Math.random() * n));
-      }
-
-      const newTempPassword = password;
-      let hashedPassword = await bcrypt.hash(newTempPassword, 10);
-
-      await sendResetPasswordEmail(email, "Request To Change Password For Auctions.me", newTempPassword);
-      await user.updateOne({ "user.email": email }, { "user.password": hashedPassword });
-      redis.set(`${email}-resetPassword`, "true");
-
-      await res.status(200).send({ status: "success", message: "New password has been sent to your email address." });
-    } else {
-      await res
-        .status(404)
-        .send({
-          status: "error",
-          message: "User with that email does not exist. Please make sure the email is correct.",
-        });
+    if (!findUser) {
+      return res.status(404).send({
+        status: "error",
+        message: "User with that email does not exist. Please make sure the email is correct.",
+      });
     }
+
+    // 🔹 สร้างรหัสผ่านชั่วคราวแบบสุ่ม 8 ตัวอักษร
+    let length = 8,
+      charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+      password = "";
+    for (let i = 0, n = charset.length; i < length; ++i) {
+      password += charset.charAt(Math.floor(Math.random() * n));
+    }
+
+    const newTempPassword = password;
+    let hashedPassword = await bcrypt.hash(newTempPassword, 10);
+
+    // 🔹 ส่งอีเมลแจ้งรหัสผ่านใหม่
+    await sendResetPasswordEmail(email, "Request To Change Password For Auctions.me", newTempPassword);
+    
+    // 🔹 อัปเดตรหัสผ่านในฐานข้อมูล
+    await user.updateOne({ "user.email": email }, { "user.password": hashedPassword });
+
+    // 🔹 ตั้งค่าใน Redis เพื่อป้องกันรีเซ็ตรหัสผ่านซ้ำ
+    redis.set(`${email}-resetPassword`, "true");
+
+    res.status(200).send({ status: "success", message: "New password has been sent to your email address." });
+
   } catch (err) {
     console.error(err);
+    res.status(500).send({ status: "error", message: "Internal Server Error" });
   }
 };
 
