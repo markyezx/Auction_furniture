@@ -1,5 +1,6 @@
 const Auction = require("../schemas/v1/auction.schema");
 const Bid = require("../schemas/v1/bid.schema");
+const { sendWinnerEmail } = require("../modules/email/emailService");
 
 // สร้างการประมูล
 exports.createAuction = async (req, res) => {
@@ -83,16 +84,30 @@ exports.placeBid = async (req, res) => {
 
 exports.endAuctions = async () => {
   try {
-    const expiredAuctions = await Auction.find({ expiresAt: { $lt: new Date() }, status: "active" });
+    const expiredAuctions = await Auction.find({ expiresAt: { $lt: new Date() }, status: "active" })
+      .populate("highestBidder", "email name")
+      .populate("owner", "email name");
 
     for (let auction of expiredAuctions) {
       auction.status = "ended";
-      auction.winner = auction.highestBidder || null; // 🏆 บันทึกผู้ชนะ
-      auction.finalPrice = auction.currentPrice; // 💰 บันทึกราคาปิดประมูล
+      auction.winner = auction.highestBidder || null;
+      auction.finalPrice = auction.currentPrice;
       await auction.save();
-      console.log(`Auction ${auction._id} ended. Winner: ${auction.winner} Price: ${auction.finalPrice}`);
+
+      // 📧 ส่งอีเมลแจ้งผู้ชนะ
+      if (auction.winner) {
+        await sendWinnerEmail(auction.highestBidder.email, auction.name, auction.finalPrice);
+      }
+
+      // 📧 ส่งอีเมลแจ้งเจ้าของ
+      if (auction.owner) {
+        const winnerName = auction.highestBidder ? auction.highestBidder.name : "ไม่มีผู้ชนะ";
+        await sendOwnerEmail(auction.owner.email, auction.name, winnerName, auction.finalPrice);
+      }
+
+      console.log(`🏆 Auction ${auction._id} ended. Winner: ${auction.winner?.email || "No Winner"}`);
     }
   } catch (err) {
-    console.error("Error ending auctions:", err);
+    console.error("❌ Error ending auctions:", err);
   }
 };

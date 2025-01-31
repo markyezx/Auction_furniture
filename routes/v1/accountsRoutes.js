@@ -1,18 +1,36 @@
 const express = require('express');
 const router = express.Router();
 
-//test update gitlab
-const { getAccountRateLimiter, getAccountsRateLimiter, deleteAccountRateLimiter, deleteAccountsRateLimiter } = require('../../modules/ratelimit/accountRatelimiter');
-
-const { changePassword, resetPassword, sendEmailVerification, sendPhoneVerification, verifyEmail, verifyPhone, verifyPhoneTemp, deactivateAccount, unverifyEmail, unverifyPhone, verifyRefreshTokenOTP, getOneAccount, getAllAccounts, deleteOneAccount, deleteAllAccounts , updateBusinessesByUserId} = require('../../controllers/accountsControllers');
+const { 
+  changePassword, 
+  forgotPassword,  // ✅ เพิ่มฟังก์ชัน forgot password
+  resetPassword, 
+  sendEmailVerification, 
+  sendPhoneVerification, 
+  verifyEmail, 
+  verifyPhone, 
+  verifyPhoneTemp, 
+  deactivateAccount, 
+  unverifyEmail, 
+  unverifyPhone, 
+  verifyRefreshTokenOTP, 
+  getOneAccount, 
+  getAllAccounts, 
+  deleteOneAccount, 
+  deleteAllAccounts, 
+  updateBusinessesByUserId 
+} = require('../../controllers/accountsControllers');
 
 const { verifyAccessToken, verifyRefreshToken } = require('../../middlewares/auth');
 
 //? Change Password
 router.patch("/password/change/:user", changePassword);
 
-//? Reset Password
-router.post("/password/reset", resetPassword);
+//? Forgot Password (✅ เพิ่ม Endpoint)
+router.post("/forgot-password", forgotPassword);
+
+//? Reset Password (✅ อัปเดตให้ใช้ token-based reset)
+router.post("/reset-password", resetPassword);
 
 //? Send Email Verification
 router.post("/verification/email/:email", verifyAccessToken, sendEmailVerification);
@@ -40,14 +58,18 @@ router.patch("/unverify/phone/:user", verifyAccessToken, unverifyPhone);
 router.post("/refreshtokenotp/verify", verifyRefreshToken, verifyRefreshTokenOTP);
 
 //? Get One Account
-router.get("/:user", [getAccountRateLimiter, verifyAccessToken], getOneAccount);
+router.get("/:user", verifyAccessToken, getOneAccount);
 
-router.get("/", [getAccountsRateLimiter, verifyAccessToken], getAllAccounts);
+//? Get All Accounts
+router.get("/", verifyAccessToken, getAllAccounts);
 
-router.delete("/:user", [deleteAccountRateLimiter, verifyAccessToken], deleteOneAccount);
+//? Delete One Account
+router.delete("/:user", verifyAccessToken, deleteOneAccount);
 
-router.delete("/", [deleteAccountsRateLimiter, verifyAccessToken], deleteAllAccounts);
+//? Delete All Accounts
+router.delete("/", verifyAccessToken, deleteAllAccounts);
 
-router.post("/udb0",  [deleteAccountsRateLimiter, verifyAccessToken], updateBusinessesByUserId);
+//? Update Businesses by User ID
+router.post("/udb0", verifyAccessToken, updateBusinessesByUserId);
 
 module.exports = router;

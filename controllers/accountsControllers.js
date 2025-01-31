@@ -1,3 +1,4 @@
+require("dotenv").config();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -86,50 +87,72 @@ const changePassword = async (req, res) => {
   }
 };
 
-const resetPassword = async (req, res) => {
+const forgotPassword = async (req, res) => {
   try {
-    let { email } = req.body; // ✅ รับอีเมลจาก body
-
+    const { email } = req.body;
     if (!email) {
       return res.status(400).send({ status: "error", message: "Email is required" });
     }
 
-    let findUser = await user.findOne({ "user.email": email });
-
+    const findUser = await user.findOne({ "user.email": email });
     if (!findUser) {
-      return res.status(404).send({
-        status: "error",
-        message: "User with that email does not exist. Please make sure the email is correct.",
-      });
+      return res.status(404).send({ status: "error", message: "User not found" });
     }
 
-    // 🔹 สร้างรหัสผ่านชั่วคราวแบบสุ่ม 8 ตัวอักษร
-    let length = 8,
-      charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-      password = "";
-    for (let i = 0, n = charset.length; i < length; ++i) {
-      password += charset.charAt(Math.floor(Math.random() * n));
-    }
+    const resetToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: "15m" });
 
-    const newTempPassword = password;
-    let hashedPassword = await bcrypt.hash(newTempPassword, 10);
+    await redis.set(`${email}-resetPassword`, resetToken, "EX", 900);
 
-    // 🔹 ส่งอีเมลแจ้งรหัสผ่านใหม่
-    await sendResetPasswordEmail(email, "Request To Change Password For Auctions.me", newTempPassword);
-    
-    // 🔹 อัปเดตรหัสผ่านในฐานข้อมูล
-    await user.updateOne({ "user.email": email }, { "user.password": hashedPassword });
+    // ✅ แก้ให้ใช้ resetToken ตรงๆ
+    const resetLink = `http://localhost:3000/resetpassword?token=${resetToken}`;
 
-    // 🔹 ตั้งค่าใน Redis เพื่อป้องกันรีเซ็ตรหัสผ่านซ้ำ
-    redis.set(`${email}-resetPassword`, "true");
+    await sendResetPasswordEmail(email, "Reset Your Password", resetToken); // ✅ ส่ง Token ไม่ใช่ URL ซ้ำซ้อน
 
-    res.status(200).send({ status: "success", message: "New password has been sent to your email address." });
-
+    return res.status(200).send({ status: "success", message: "Reset password link sent to email." });
   } catch (err) {
-    console.error(err);
-    res.status(500).send({ status: "error", message: "Internal Server Error" });
+    console.error("Forgot Password Error:", err);
+    return res.status(500).send({ status: "error", message: "Internal Server Error" });
   }
 };
+
+const resetPassword = async (req, res) => {
+  try {
+    const { newPassword, token } = req.body; // ✅ รับ Token จาก Body แทน Cookie
+
+    if (!token || !newPassword) {
+      return res.status(400).send({ status: "error", message: "Token and new password are required" });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(400).send({ status: "error", message: "Invalid or expired token" });
+    }
+
+    const email = decoded.email;
+    const storedToken = await redis.get(`${email}-resetPassword`);
+
+    if (!storedToken || storedToken !== token) {
+      return res.status(400).send({ status: "error", message: "Invalid or expired token" });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).send({ status: "error", message: "Password must be at least 8 characters long." });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await user.updateOne({ "user.email": email }, { "user.password": hashedPassword });
+
+    await redis.del(`${email}-resetPassword`);
+
+    return res.status(200).send({ status: "success", message: "Password reset successfully" });
+  } catch (err) {
+    console.error("Reset Password Error:", err);
+    return res.status(500).send({ status: "error", message: "Internal Server Error" });
+  }
+};
+
 
 const sendEmailVerification = async (req, res) => {
   let email = req.params.email;
@@ -851,6 +874,7 @@ const updateBusinessesByUserId = async (req, res) => {
 module.exports = {
   changePassword,
   resetPassword,
+  forgotPassword,
   sendEmailVerification,
   sendPhoneVerification,
   verifyEmail,
