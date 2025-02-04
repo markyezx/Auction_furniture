@@ -12,6 +12,52 @@ const sendVerifyEmail = require("../modules/email/sendVerifyEmail");
 const sendResetPasswordEmail = require("../modules/email/sendResetPasswordEmail");
 
 const user = require("../schemas/v1/user.schema");
+const User = require("../schemas/v1/user.schema");
+const UserProfile = require("../schemas/v1/userProfile.schema");
+
+const getUserProfile = async (req, res) => {
+  try {
+    console.log("📌 ตรวจสอบ Token:", req.user); // Debug Token
+
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+
+    // ค้นหาข้อมูลผู้ใช้และโปรไฟล์
+    const user = await User.findById(req.user.userId).select("-password");
+    const userProfile = await UserProfile.findOne({ userId: req.user.userId });
+
+    if (!user) {
+      return res.status(404).json({ status: "error", message: "User not found" });
+    }
+
+    // หากไม่มีโปรไฟล์ ให้สร้างใหม่
+    if (!userProfile) {
+      const newProfile = new UserProfile({ userId: user._id });
+      await newProfile.save();
+    }
+
+    // ✅ ถ้าผู้ใช้ต้องการดึงข้อมูลประวัติการประมูล
+    let auctionHistory = [];
+    if (req.query.includeAuction === "true") {
+      auctionHistory = await UserProfile.findOne({ userId: req.user.userId })
+        .select("auctionHistory")
+        .populate("auctionHistory.itemId", "name image price");
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        user,
+        profile: userProfile || {},
+        auctionHistory: auctionHistory ? auctionHistory.auctionHistory : [],
+      },
+    });
+  } catch (error) {
+    console.error("🚨 API /me Error:", error);
+    res.status(500).json({ status: "error", message: "Internal Server Error" });
+  }
+};
 
 const changePassword = async (req, res) => {
   try {
@@ -153,7 +199,6 @@ const resetPassword = async (req, res) => {
   }
 };
 
-
 const sendEmailVerification = async (req, res) => {
   let email = req.params.email;
 
@@ -272,7 +317,6 @@ const sendPhoneVerification = async (req, res) => {
   }
 };
 
-
 const verifyEmail = async (req, res) => {
   const email = req.query.email;
   const ref = req.query.ref;
@@ -349,7 +393,7 @@ const verifyEmail = async (req, res) => {
         <p>กรุณารอสักครู่ เรากำลังพาคุณไปยังหน้าถัดไป...</p>
         <script>
           setTimeout(() => {
-            window.location.href = "https://www.youtube.com/watch?v=M3VGsumz7XA&list=RDM3VGsumz7XA&start_radio=1";
+            window.location.href = "http://localhost:3000/login";
           }, 5000); // 5 วินาที
         </script>
       </body>
@@ -363,7 +407,6 @@ const verifyEmail = async (req, res) => {
     });
   }
 };
-
 
 const verifyPhone = async (req, res) => {
   let email = req.query.email;
@@ -889,4 +932,5 @@ module.exports = {
   deleteOneAccount,
   deleteAllAccounts,
   updateBusinessesByUserId,
+  getUserProfile
 };

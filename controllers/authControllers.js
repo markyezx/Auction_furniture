@@ -8,7 +8,7 @@ const { OAuth2Client } = require("google-auth-library");
 const Joi = require('joi');
 
 require("../middlewares/passport/passport-local");
-//require('../middlewares/passport/passport-jwt');
+require('../middlewares/passport/passport-jwt');
 require("../middlewares/passport/passport-google");
 require("../middlewares/passport/passport-line");
 
@@ -157,283 +157,136 @@ const register = async (req, res) => {
   }
 };
 
-const login = async (req, res) => {
-  if (!req.body) {
-    res
-      .status(400)
-      .send({ status: "error", message: "Body cannot be empty!" });
-    return;
-  }
+const login = async (req, res, next) => {
+  console.log("📌 Request Headers:", req.headers);
 
-  const deviceFingerprint = req.headers["device-fingerprint"];
-  const businessId = req.headers["businessid"];
-  const { email, password } = req.body;
+  passport.authenticate("local", { session: false }, async (err, foundUser, info) => {
+    if (err) return next(err);
+    if (!foundUser) return res.status(401).json({ status: "error", message: info?.message || "Unauthorized" });
 
-  if (!deviceFingerprint) {
-    res
-      .status(400)
-      .send({ status: "error", message: "Device fingerprint is required!" });
-    return;
-  }
+    // ✅ สร้าง Access Token และ Refresh Token
+    const accessToken = generateToken(
+      { userId: foundUser._id },
+      process.env.JWT_ACCESS_TOKEN_SECRET,
+      process.env.ACCESS_TOKEN_EXPIRES
+    );
 
-  if (!businessId) {
-    res
-      .status(400)
-      .send({ status: "error", message: "Business ID is required!" });
-    return;
-  }
+    const refreshToken = generateToken(
+      { userId: foundUser._id },
+      process.env.JWT_REFRESH_TOKEN_SECRET,
+      process.env.REFRESH_TOKEN_EXPIRES
+    );
 
-  if (!email) {
-    res
-      .status(400)
-      .send({ status: "error", message: "Email cannot be empty!" });
-    return;
-  }
+    // ✅ บันทึก Refresh Token ลง Redis
+    await redis.set(`RefreshToken_${foundUser._id}`, refreshToken, "EX", 7 * 24 * 60 * 60); // หมดอายุใน 7 วัน
 
-  if (!password) {
-    res
-      .status(400)
-      .send({ status: "error", message: "Password cannot be empty!" });
-    return;
-  }
+    // ✅ ตั้งค่า Cookies
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV !== "development",
+      sameSite: process.env.NODE_ENV !== "development" ? "None" : "Lax",
+      maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
+    });
 
-  try {
-    passport.authenticate("local", { session: false }, async (err, foundUser, info) => {
-      if (err) {
-        console.error("Authentication Error:", err);
-        res
-          .status(500)
-          .send({ status: "error", message: "Internal server error." });
-        return;
-      }
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV !== "development",
+      sameSite: process.env.NODE_ENV !== "development" ? "None" : "Lax",
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
+    });
 
-      if (!foundUser) {
-        res
-          .status(info?.statusCode || 401)
-          .send({ status: "error", message: info?.message || "Unauthorized" });
-        return;
-      }
+    console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]); // ✅ Debug Cookies
 
-      const loggedInDevices = foundUser.loggedInDevices || [];
-      if (loggedInDevices.length >= MAX_DEVICES) {
-        res
-          .status(403)
-          .send({ status: "error", message: "Login limit exceeded." });
-        return;
-      }
-
-      const { name, phone, activated, verified, imageURL } = foundUser.user;
-      const { _id: userId } = foundUser;
-
-      const accessToken = generateToken(
-        { userId, name, email, businessId },
-        process.env.JWT_ACCESS_TOKEN_SECRET,
-        process.env.ACCESS_TOKEN_EXPIRES
-      );
-
-      const refreshToken = generateToken(
-        { userId, name, email, businessId },
-        process.env.JWT_REFRESH_TOKEN_SECRET,
-        process.env.REFRESH_TOKEN_EXPIRES
-      );
-
-      const deviceIndex = loggedInDevices.findIndex(
-        (device) => device.deviceFingerprint === deviceFingerprint
-      );
-
-      if (deviceIndex === -1) {
-        await User.updateOne(
-          { _id: userId },
-          {
-            $push: {
-              loggedInDevices: {
-                deviceFingerprint,
-                lastLogin: Date.now(),
-              },
-            },
-          }
-        );
-      } else {
-        loggedInDevices[deviceIndex].lastLogin = Date.now();
-        await User.updateOne(
-          { _id: userId },
-          { $set: { loggedInDevices } }
-        );
-      }
-
-      res.cookie("accessToken", accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production", // เปิดเฉพาะเมื่อใช้ HTTPS
-        sameSite: "strict",
-        maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
-      });
-      
-      res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
-      });
-
-      res.status(200).send({
-        status: "success",
-        message: "Successfully Login",
-        data: {
-          userId,
-          user: { name, email, phone, activated, verified },
-          imageURL,
-        },
-      });
-    })(req, res);
-  } catch (error) {
-    console.error("Login Error:", error);
-    res
-      .status(500)
-      .send({ status: "error", message: "Internal server error." });
-  }
+    res.status(200).json({
+      status: "success",
+      message: "Login successful",
+      user: { id: foundUser._id, email: foundUser.user.email },
+    });
+  })(req, res, next);
 };
 
 const logout = async (req, res, next) => {
-  console.log("Logout function triggered");
+  console.log("📌 Logout function triggered");
 
   try {
-    // ดึง Refresh Token จาก Secure Cookie
     const refreshToken = req.cookies?.refreshToken;
     if (!refreshToken) {
-      return res.status(401).send({
-        status: "error",
-        message: "Refresh token is required!",
-      });
+      return res.status(401).send({ status: "error", message: "Refresh token is required!" });
+    }
+
+    // ✅ ตรวจสอบว่า Refresh Token ถูกต้องหรือไม่
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET);
+    } catch (err) {
+      return res.status(401).send({ status: "error", message: "Invalid refresh token!" });
+    }
+
+    const userId = decoded?.userId;
+    if (!userId) {
+      return res.status(401).send({ status: "error", message: "Unauthorized user!" });
+    }
+
+    // ✅ ลบ Refresh Token ออกจาก Redis
+    await redis.del(`RefreshToken_${userId}`);
+
+    // ✅ ลบ Secure Cookies
+    res.clearCookie("accessToken", { httpOnly: true, secure: true, sameSite: "strict" });
+    res.clearCookie("refreshToken", { httpOnly: true, secure: true, sameSite: "strict" });
+
+    return res.status(200).send({ status: "success", message: "Successfully logged out." });
+  } catch (err) {
+    console.error("🚨 Logout Error:", err);
+    next(err);
+  }
+};
+
+const refresh = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies?.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({ status: "error", message: "Refresh token is required!" });
+    }
+
+    // ✅ ตรวจสอบว่า Refresh Token ตรงกับที่อยู่ใน Redis หรือไม่
+    const storedToken = await redis.get(`RefreshToken_${req.user.userId}`);
+    if (!storedToken || storedToken !== refreshToken) {
+      return res.status(403).json({ status: "error", message: "Invalid refresh token!" });
     }
 
     let decoded;
     try {
       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET);
     } catch (err) {
-      console.error("JWT Verification Error:", err);
-      return res.status(401).send({
-        status: "error",
-        message:
-          err.name === "TokenExpiredError"
-            ? "Refresh token has expired!"
-            : "Invalid refresh token!",
-      });
+      return res.status(401).json({ status: "error", message: "Invalid refresh token!" });
     }
 
-    const userId = decoded?.userId;
-    const deviceFingerprint = req.headers["device-fingerprint"];
-    const businessId = req.headers["businessid"];
-
-    if (!deviceFingerprint) {
-      return res.status(400).send({
-        status: "error",
-        message: "Device fingerprint is required!",
-      });
-    }
-    if (!businessId) {
-      return res.status(400).send({
-        status: "error",
-        message: "Business ID is required!",
-      });
-    }
-    if (!userId) {
-      return res.status(401).send({
-        status: "error",
-        message: "Unauthorized user!",
-      });
-    }
-
-    // ค้นหา User
-    const foundUser = await User.findById(userId);
-    if (!foundUser) {
-      return res.status(404).send({
-        status: "error",
-        message: "User not found!",
-      });
-    }
-
-    const updatedDevices = foundUser.loggedInDevices.filter(
-      (device) =>
-        device.deviceFingerprint !== deviceFingerprint ||
-        device.businessId !== businessId
+    // ✅ ออก Access Token ใหม่
+    const newAccessToken = generateToken(
+      { userId: decoded.userId },
+      process.env.JWT_ACCESS_TOKEN_SECRET,
+      process.env.ACCESS_TOKEN_EXPIRES
     );
 
-    // อัปเดต loggedInDevices ในฐานข้อมูล
-    await User.updateOne(
-      { _id: userId },
-      { $set: { loggedInDevices: updatedDevices } }
-    );
-
-    const redisKeys = [
-      `Device_Fingerprint_${userId}`,
-      `Last_Login_${userId}_${deviceFingerprint}`,
-      `Last_Refresh_Token_OTP_${userId}_${deviceFingerprint}`,
-      `Last_Refresh_Token_${userId}_${deviceFingerprint}`,
-      `Last_Access_Token_${userId}_${deviceFingerprint}`,
-    ];
-
-    const redisPromises = redisKeys.map((key) => redis.del(key));
-    await Promise.all(redisPromises);
-
-    // ลบ Secure Cookies
-    res.clearCookie("accessToken", {
+    // ✅ ตั้งค่า Access Token ใหม่ใน Cookies
+    res.cookie("accessToken", newAccessToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: "strict",
-    });
-    res.clearCookie("refreshToken", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "strict",
+      secure: process.env.NODE_ENV !== "development",
+      sameSite: process.env.NODE_ENV !== "development" ? "None" : "Lax",
+      maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
     });
 
-    res.status(200).send({
+    return res.status(200).json({
       status: "success",
-      message: "Successfully logged out.",
+      message: "New access token has been generated",
+      accessToken: newAccessToken,
     });
-  } catch (err) {
-    console.error("Logout Error:", err);
-    next(err);
+  } catch (error) {
+    console.error("🚨 Refresh Token Error:", error);
+    return res.status(500).json({ status: "error", message: "Internal Server Error" });
   }
 };
 
-const refresh = async (req, res, next) => {
-  //console.log('req.user', req.user);
-
-  const accessToken = jwt.sign(
-    {
-      userId: req.user.userId,
-      name: req.user.name,
-      email: req.user.email,
-      businessId: req.user.businessId,
-    },
-    process.env.JWT_ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRES }
-  );
-  redis.set(
-    `Last_Access_Token_${req.user.userId}_${req.headers["hardware-id"]}`,
-    accessToken
-  );
-
-  //const foundUser = await user.findOneAndUpdate({ userId: req.user.userId }, { 'user.token': accessToken }, { useFindAndModify: false, new: true });
-
-  return res.status(200).send({
-    status: "success",
-    message: "New access token has been generated",
-    data: {
-      user: {
-        userId: req.user.userId,
-        name: req.user.name,
-        email: req.user.email,
-        businessId: req.user.businessId,
-      },
-      tokens: {
-        accessToken: accessToken,
-        //refreshToken: foundUser.user.token
-      },
-    },
-  });
-};
 
 const googleCallback = async (req, res, next) => {
   res

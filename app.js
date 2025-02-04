@@ -61,6 +61,15 @@ app.use(
   })
 );
 
+app.use(
+  cors({
+    origin: "http://localhost:3000", // ✅ กำหนด Origin ตรงๆ แทน "*"
+    credentials: true, // ✅ สำคัญ! เพื่อให้ Cookies และ Session ทำงาน
+    methods: "GET,POST,PUT,PATCH,DELETE",
+    optionsSuccessStatus: 200,
+  })
+);
+
 // sessions แบบไม่ store
 // app.use(
 //   sessions({
@@ -73,12 +82,13 @@ app.use(
 //? PassportJS
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(cookieParser());
 
 // Cross Origin Resource Sharing
 const whitelist = [
   "http://localhost:5173",
 ];
-const corsOptions = {
+/*const corsOptions = {
   origin: (origin, callback) => {
     // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
@@ -95,8 +105,7 @@ const corsOptions = {
   methods: "GET,POST,PUT,PATCH,DELETE",
   optionsSuccessStatus: 200,
 };
-app.use(cors("*"));
-//app.use(cors(corsOptions));
+app.use(cors(corsOptions));*/
 
 const server = require("http").createServer(app);
 const io = require("socket.io")(server);
