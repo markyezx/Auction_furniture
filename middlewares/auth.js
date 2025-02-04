@@ -35,8 +35,6 @@ const authenticate = (req, res, next) => {
     next();
   });
 };
-
-
 // Middleware: ตรวจสอบ role
 const authorize = (allowedRoles) => (req, res, next) => {
   const userRole = req.user?.role;

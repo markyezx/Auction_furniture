@@ -25,9 +25,6 @@ const { verifyAccessToken, verifyRefreshToken } = require('../../middlewares/aut
 const { getUserProfile } = require("../../controllers/accountsControllers"); // ✅ ตรวจสอบชื่อไฟล์ให้ตรง
 const { checkLogin } = require("../../middlewares/authMiddleware"); // ✅ ตรวจสอบเส้นทางไฟล์ให้ถูกต้อง
 
-
-router.get("/me", checkLogin, getUserProfile); // ✅ ป้องกันเฉพาะผู้ที่ล็อกอินเท่านั้น
-
 //? Change Password
 router.patch("/password/change/:user", changePassword);
 
