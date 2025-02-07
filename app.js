@@ -134,6 +134,22 @@ io.on("connection", (socket) => {
   });
 });
 
+const cron = require("node-cron");
+const { endAuctions } = require("./controllers/auctionController");
+
+// รันทุกๆ 1 นาที
+cron.schedule("*/1 * * * *", async () => {
+  console.log("🔄 Checking for expired auctions...");
+  await endAuctions();
+});
+
+app.use(express.json()); // ✅ รองรับ JSON body
+app.use(express.urlencoded({ extended: true })); // ✅ รองรับ Form Data
+
+//? Profile Endpoints
+const v1ProfileRouter = require("./routes/v1/profileRoutes");
+app.use("/api/v1/profile", v1ProfileRouter);
+
 //! V1 Endpoints
 const v1AuctionRouter = require("./routes/v1/auctionRoutes");
 app.use("/api/v1/auction", v1AuctionRouter);

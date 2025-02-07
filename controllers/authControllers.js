@@ -28,6 +28,7 @@ const regularUserData = require("../schemas/v1/userData/regularUserData.schema")
 const organizationUserData = require("../schemas/v1/userData/organizationUserData.schema");
 const contactInfoSchema = require("../schemas/v1/contact.schema");
 const addressSchema = require("../schemas/v1/address.schema");
+const Profile = require("../schemas/v1/profile.schema"); // ✅ เพิ่มการนำเข้า Profile
 
 
 const MAX_DEVICES = 50;
@@ -197,13 +198,29 @@ const login = async (req, res, next) => {
 
     console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]); // ✅ Debug Cookies
 
+    // ✅ บันทึกประวัติการเข้าสู่ระบบ (Login History)
+    await Profile.findOneAndUpdate(
+      { user: foundUser._id },
+      {
+        $push: {
+          loginHistory: {
+            ipAddress: req.ip,
+            userAgent: req.headers["user-agent"],
+            timestamp: new Date(),
+          }
+        }
+      },
+      { new: true, upsert: true } // ✅ ถ้าไม่มี Profile ให้สร้างใหม่
+    );
+
     res.status(200).json({
       status: "success",
       message: "Login successful",
-      user: { id: foundUser._id, email: foundUser.user.email },
+      user: { id: foundUser._id, email: foundUser.user?.email || foundUser.email }, // ✅ ป้องกัน undefined
     });
   })(req, res, next);
 };
+
 
 const logout = async (req, res, next) => {
   console.log("📌 Logout function triggered");

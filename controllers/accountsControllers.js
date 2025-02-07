@@ -13,6 +13,7 @@ const sendResetPasswordEmail = require("../modules/email/sendResetPasswordEmail"
 
 const user = require("../schemas/v1/user.schema");
 const User = require("../schemas/v1/user.schema");
+const Profile = require("../schemas/v1/profile.schema"); // ✅ Import Profile
 
 const changePassword = async (req, res) => {
   try {

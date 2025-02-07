@@ -9,8 +9,17 @@ const auctionSchema = new mongoose.Schema({
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   highestBidder: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   status: { type: String, enum: ["active", "ended"], default: "active" },
-  winner: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // 🏆 เพิ่มผู้ชนะ
-  finalPrice: { type: Number }, // 💰 เพิ่มราคาปิดประมูล
+  winner: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  finalPrice: { type: Number },
+  bids: [{ type: mongoose.Schema.Types.ObjectId, ref: "Bid" }], // 📌 เพิ่มประวัติการบิด
+  history: [
+    {
+      user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      action: { type: String, enum: ["BID", "UPDATE", "END"] },
+      amount: Number,
+      timestamp: { type: Date, default: Date.now }
+    }
+  ], // 📌 เพิ่มประวัติการเปลี่ยนแปลง
   createdAt: { type: Date, default: Date.now },
 });
 

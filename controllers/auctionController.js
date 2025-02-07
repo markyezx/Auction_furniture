@@ -1,25 +1,27 @@
+// controllers/auctionController.js
 const Auction = require("../schemas/v1/auction.schema");
 const Bid = require("../schemas/v1/bid.schema");
 const { sendWinnerEmail } = require("../modules/email/emailService");
+const { isValidObjectId } = require("mongoose");
 
-// สร้างการประมูล
 exports.createAuction = async (req, res) => {
   try {
-    const { name, startingPrice, minimumBidIncrement, expiresAt } = req.body;
-
-    if (!expiresAt || new Date(expiresAt) <= new Date()) {
-      return res.status(400).send({ status: "error", message: "Invalid auction expiration time" });
+    const { name, startingPrice, minimumBidIncrement = 10, expiresAt } = req.body;
+    if (!name || !startingPrice || !expiresAt) {
+      return res.status(400).send({ status: "error", message: "Missing required fields" });
+    }
+    if (new Date(expiresAt) <= new Date()) {
+      return res.status(400).send({ status: "error", message: "Invalid expiration date" });
     }
 
     const auction = new Auction({
       name,
       startingPrice,
       currentPrice: startingPrice,
-      minimumBidIncrement: minimumBidIncrement || 10, // ค่าเริ่มต้น 10
-      expiresAt: new Date(expiresAt), // เวลาหมดอายุ
+      minimumBidIncrement,
+      expiresAt: new Date(expiresAt),
       owner: req.user.userId,
     });
-
     await auction.save();
     res.status(201).send({ status: "success", data: auction });
   } catch (err) {
@@ -27,7 +29,23 @@ exports.createAuction = async (req, res) => {
   }
 };
 
-// ดึงรายการประมูลทั้งหมด
+exports.getAuctionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
+    const auction = await Auction.findById(id).populate("highestBidder", "name email")
+      .populate({ path: "bids", select: "user amount createdAt", populate: { path: "user", select: "name" } });
+    if (!auction) {
+      return res.status(404).send({ status: "error", message: "Auction not found" });
+    }
+    res.status(200).send({ status: "success", data: auction });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
 exports.getAuctions = async (req, res) => {
   try {
     const auctions = await Auction.find().populate("highestBidder", "name email");
@@ -37,50 +55,67 @@ exports.getAuctions = async (req, res) => {
   }
 };
 
-// วางประมูล
-exports.placeBid = async (req, res) => {
+exports.getAuctionHistory = async (req, res) => {
   try {
-    const { amount } = req.body;
-    const auction = await Auction.findById(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
 
+    const auction = await Auction.findById(id).select("history").populate("history.user", "name email");
     if (!auction) {
       return res.status(404).send({ status: "error", message: "Auction not found" });
     }
 
-    if (new Date() > auction.expiresAt) {
-      return res.status(400).send({ status: "error", message: "Auction has expired" });
-    }
-
-    // ❌ ห้ามบิดต่อกันเอง
-    if (auction.highestBidder && auction.highestBidder.toString() === req.user.userId) {
-      return res.status(400).send({ status: "error", message: "You cannot place two consecutive bids." });
-    }
-
-    // ✅ ตรวจสอบ bid ต้องมากกว่าขั้นต่ำ
-    if (amount < auction.currentPrice + auction.minimumBidIncrement) {
-      return res.status(400).send({
-        status: "error",
-        message: `Bid must be at least ${auction.currentPrice + auction.minimumBidIncrement}`,
-      });
-    }
-
-    const bid = new Bid({
-      auction: auction._id,
-      user: req.user.userId,
-      amount,
-      bidAt: new Date(), // 🕒 บันทึกเวลาที่ bid
-    });
-
-    auction.currentPrice = amount;
-    auction.highestBidder = req.user.userId;
-
-    await Promise.all([bid.save(), auction.save()]);
-
-    res.status(201).send({ status: "success", data: bid });
+    res.status(200).send({ status: "success", data: auction.history });
   } catch (err) {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
+
+
+exports.placeBid = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
+
+    const auction = await Auction.findById(id);
+    if (!auction) {
+      return res.status(404).send({ status: "error", message: "Auction not found" });
+    }
+    if (new Date() > auction.expiresAt) {
+      return res.status(400).send({ status: "error", message: "Auction has expired" });
+    }
+    if (auction.highestBidder?.toString() === req.user.userId) {
+      return res.status(400).send({ status: "error", message: "You cannot place consecutive bids" });
+    }
+    if (amount < auction.currentPrice + auction.minimumBidIncrement) {
+      return res.status(400).send({ status: "error", message: "Bid too low" });
+    }
+
+    // 📌 ตรวจสอบว่า Bid ซ้ำภายใน 5 วินาทีไม่ได้
+    const lastBid = await Bid.findOne({ auction: auction._id, user: req.user.userId }).sort({ createdAt: -1 });
+    if (lastBid && (Date.now() - lastBid.createdAt.getTime() < 5000)) {
+      return res.status(400).send({ status: "error", message: "You must wait 5 seconds before bidding again" });
+    }
+
+    const bid = new Bid({ auction: auction._id, user: req.user.userId, amount });
+    auction.currentPrice = amount;
+    auction.highestBidder = req.user.userId;
+    auction.bids.push(bid._id);
+    auction.history.push({ user: req.user.userId, action: "BID", amount });
+
+    await Promise.all([bid.save(), auction.save()]);
+    res.status(201).send({ status: "success", data: { auction, bid } });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
 
 exports.endAuctions = async () => {
   try {
@@ -94,20 +129,29 @@ exports.endAuctions = async () => {
       auction.finalPrice = auction.currentPrice;
       await auction.save();
 
-      // 📧 ส่งอีเมลแจ้งผู้ชนะ
       if (auction.winner) {
         await sendWinnerEmail(auction.highestBidder.email, auction.name, auction.finalPrice);
       }
-
-      // 📧 ส่งอีเมลแจ้งเจ้าของ
-      if (auction.owner) {
-        const winnerName = auction.highestBidder ? auction.highestBidder.name : "ไม่มีผู้ชนะ";
-        await sendOwnerEmail(auction.owner.email, auction.name, winnerName, auction.finalPrice);
-      }
-
-      console.log(`🏆 Auction ${auction._id} ended. Winner: ${auction.winner?.email || "No Winner"}`);
     }
   } catch (err) {
-    console.error("❌ Error ending auctions:", err);
+    console.error("Error ending auctions:", err);
+  }
+};
+
+exports.getBidHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
+
+    const bids = await Bid.find({ auction: id }).populate("user", "name email").sort({ createdAt: -1 });
+    if (!bids.length) {
+      return res.status(404).send({ status: "error", message: "No bids found" });
+    }
+
+    res.status(200).send({ status: "success", data: bids });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
   }
 };

@@ -22,8 +22,8 @@ const {
 } = require('../../controllers/accountsControllers');
 
 const { verifyAccessToken, verifyRefreshToken } = require('../../middlewares/auth');
-const { getUserProfile } = require("../../controllers/accountsControllers"); // ✅ ตรวจสอบชื่อไฟล์ให้ตรง
-const { checkLogin } = require("../../middlewares/authMiddleware"); // ✅ ตรวจสอบเส้นทางไฟล์ให้ถูกต้อง
+
+const { checkLogin } = require("../../middlewares/authMiddleware");
 
 //? Change Password
 router.patch("/password/change/:user", changePassword);

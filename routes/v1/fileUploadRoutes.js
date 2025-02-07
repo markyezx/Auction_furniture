@@ -1,16 +1,17 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const path = require('path');
-const multer = require('multer');
+const multer = require("multer");
 
+const upload = multer();
 
-const processFiles = require('../../modules/multer/multer');
+const fileUploadController = require("../../controllers/fileUploadControllers");
 
-const upload = multer({ processFiles });
+const fileUpload = fileUploadController.fileUpload;
+const queryObjectInBucket = fileUploadController.queryObjectInBucket || ((req, res) => {
+  res.status(501).send({ status: "error", message: "queryObjectInBucket not implemented" });
+});
 
-const { fileUpload, queryObjectInBucket } = require('../../controllers/fileUploadControllers');
-
-router.post('/', upload.single('product'), fileUpload);
-router.get('/', queryObjectInBucket);
+router.post("/", upload.single("product"), fileUpload);
+router.get("/", queryObjectInBucket);
 
 module.exports = router;

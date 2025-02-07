@@ -1,4 +1,4 @@
-// File: schemas/user.schema.js
+// schemas/user.schema.js
 const mongoose = require("mongoose");
 const addressSchema = require("./address.schema");
 const contactInfoSchema = require("./contact.schema");
