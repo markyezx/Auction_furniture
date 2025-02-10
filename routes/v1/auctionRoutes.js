@@ -1,5 +1,5 @@
 const express = require("express");
-const { createAuction, getAuctions, getAuctionById, placeBid, endAuctions, getAuctionHistory, getBidHistory } = require("../../controllers/auctionController");
+const { createAuction, getAuctions, getAuctionById, placeBid, endAuctions, getAuctionHistory, getBidHistory ,forceEndAuctions } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 
 const router = express.Router();
@@ -20,5 +20,15 @@ router.post("/end-auctions", async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 });
+
+router.post("/force-end-auctions", async (req, res) => {
+  try {
+    await forceEndAuctions();
+    res.status(200).send({ status: "success", message: "Auctions forcibly ended" });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
 
 module.exports = router;

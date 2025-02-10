@@ -165,7 +165,6 @@ const login = async (req, res, next) => {
     if (err) return next(err);
     if (!foundUser) return res.status(401).json({ status: "error", message: info?.message || "Unauthorized" });
 
-    // ✅ สร้าง Access Token และ Refresh Token
     const accessToken = generateToken(
       { userId: foundUser._id },
       process.env.JWT_ACCESS_TOKEN_SECRET,
@@ -178,10 +177,8 @@ const login = async (req, res, next) => {
       process.env.REFRESH_TOKEN_EXPIRES
     );
 
-    // ✅ บันทึก Refresh Token ลง Redis
     await redis.set(`RefreshToken_${foundUser._id}`, refreshToken, "EX", 7 * 24 * 60 * 60); // หมดอายุใน 7 วัน
 
-    // ✅ ตั้งค่า Cookies
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV !== "development",
@@ -196,9 +193,16 @@ const login = async (req, res, next) => {
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
     });
 
-    console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]); // ✅ Debug Cookies
+    // ✅ ตั้งค่าคุกกี้ `email`
+    res.cookie("email", foundUser.user?.email || foundUser.email, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV !== "development",
+      sameSite: "Lax",
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
+    });
 
-    // ✅ บันทึกประวัติการเข้าสู่ระบบ (Login History)
+    console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]);
+
     await Profile.findOneAndUpdate(
       { user: foundUser._id },
       {
@@ -210,13 +214,13 @@ const login = async (req, res, next) => {
           }
         }
       },
-      { new: true, upsert: true } // ✅ ถ้าไม่มี Profile ให้สร้างใหม่
+      { new: true, upsert: true }
     );
 
     res.status(200).json({
       status: "success",
       message: "Login successful",
-      user: { id: foundUser._id, email: foundUser.user?.email || foundUser.email }, // ✅ ป้องกัน undefined
+      user: { id: foundUser._id, email: foundUser.user?.email || foundUser.email },
     });
   })(req, res, next);
 };
