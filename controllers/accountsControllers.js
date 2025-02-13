@@ -17,75 +17,50 @@ const Profile = require("../schemas/v1/profile.schema"); // ✅ Import Profile
 
 const changePassword = async (req, res) => {
   try {
-    // ตรวจสอบว่ามีข้อมูลใน request body
-    if (!req.body || !req.body.password) {
-      return res.status(400).send({ status: "error", message: "Password is required." });
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).send({ status: "error", message: "Both old and new passwords are required." });
     }
 
-    const rawPassword = req.body.password;
+    if (newPassword.length < 8) {
+      return res.status(400).send({ status: "error", message: "New password must be at least 8 characters long." });
+    }
 
-    // ตรวจสอบความยาวและความปลอดภัยของรหัสผ่าน
-    if (rawPassword.length < 8) {
+    const passwordStrengthRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordStrengthRegex.test(newPassword)) {
       return res.status(400).send({
         status: "error",
-        message: "Password must be at least 8 characters long.",
+        message: "New password must include at least one uppercase letter, one lowercase letter, one number, and one special character.",
       });
     }
 
-    const passwordStrengthRegex =
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passwordStrengthRegex.test(rawPassword)) {
-      return res.status(400).send({
-        status: "error",
-        message:
-          "Password must include at least one uppercase letter, one lowercase letter, one number, and one special character.",
-      });
-    }
-
-    // ตรวจสอบ userId จาก params และ validate รูปแบบ email
-    const userId = req.params.user;
-    if (!userId || !/^\S+@\S+\.\S+$/.test(userId)) {
-      return res.status(400).send({
-        status: "error",
-        message: "Invalid user email format.",
-      });
-    }
-
-    // เข้ารหัสรหัสผ่านก่อนบันทึก
-    const hashedPassword = await bcrypt.hash(rawPassword, 10);
-
-    // ค้นหาและอัปเดตข้อมูลผู้ใช้
-    const userData = await user.findOneAndUpdate(
-      { "user.email": userId },
-      { "user.password": hashedPassword },
-      { useFindAndModify: false, new: true }
-    );
+    const userId = req.user.userId; // ✅ ใช้ userId จาก token authentication
+    const userData = await User.findById(userId);
 
     if (!userData) {
-      return res.status(404).send({
-        status: "error",
-        message: `Cannot update password. User with email ${userId} not found.`,
-      });
+      return res.status(404).send({ status: "error", message: "User not found." });
     }
 
-    // ตรวจสอบ flag resetPassword ใน Redis และลบออกหากมี
-    const resetPasswordFlag = await redis.get(`${userId}-resetPassword`);
-    if (resetPasswordFlag) {
-      await redis.del(`${userId}-resetPassword`);
+    // ✅ ตรวจสอบรหัสผ่านเดิมก่อนเปลี่ยน
+    const isMatch = await bcrypt.compare(oldPassword, userData.password);
+    if (!isMatch) {
+      return res.status(400).send({ status: "error", message: "Old password is incorrect." });
     }
 
-    // ตอบกลับผู้ใช้เมื่อเปลี่ยนรหัสผ่านสำเร็จ
-    return res.status(200).send({
-      authenticated_user: req.user,
-      status: "success",
-      message: `Password for user ${userId} has been successfully updated.`,
-    });
+    // ✅ เข้ารหัสรหัสผ่านใหม่
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    userData.password = hashedPassword;
+    await userData.save();
+
+    // ✅ ส่งอีเมลแจ้งเตือนการเปลี่ยนรหัสผ่าน
+    await sendResetPasswordEmail(userData.email, "Password Changed Successfully", "Your password has been changed successfully.");
+
+    return res.status(200).send({ status: "success", message: "Password has been successfully updated." });
+
   } catch (err) {
-    console.error("Error updating password:", err.message);
-    return res.status(500).send({
-      status: "error",
-      message: `An error occurred while updating the password. Please try again later.`,
-    });
+    console.error("❌ Error updating password:", err.message);
+    return res.status(500).send({ status: "error", message: "An error occurred while updating the password." });
   }
 };
 

@@ -92,12 +92,18 @@ exports.placeBid = async (req, res) => {
       return res.status(400).send({ status: "error", message: "Bid too low" });
     }
 
-    // ✅ อ่าน email จากคุกกี้ และแก้ปัญหา %40
+    // ✅ ดึง Email จาก Token แทนที่จะใช้จากคุกกี้อย่างเดียว
+    const token = req.cookies?.accessToken || req.headers.authorization?.split(" ")[1];
+    console.log("📌 Token ที่ใช้:", token);
+
+    if (!token) {
+      return res.status(401).send({ status: "error", message: "Unauthorized: No token found" });
+    }
+
     const bidderEmail = req.cookies?.email ? decodeURIComponent(req.cookies.email) : null;
     console.log("📌 ค่าของ bidderEmail:", bidderEmail);
 
     if (!bidderEmail) {
-      console.log("❌ ไม่มีคุกกี้ email");
       return res.status(400).send({ status: "error", message: "User email not found in cookies" });
     }
 
@@ -119,7 +125,6 @@ exports.placeBid = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
-
 
 exports.endAuctions = async () => {
   try {
@@ -213,3 +218,41 @@ exports.forceEndAuctions = async () => {
     console.error("❌ Error forcing end auctions:", err);
   }
 };
+
+exports.forceEndAuctionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
+
+    console.log(`🚨 กำลังบังคับปิดการประมูล ID: ${id}`);
+
+    const auction = await Auction.findById(id).select("name highestBidderEmail currentPrice status");
+
+    if (!auction) {
+      return res.status(404).send({ status: "error", message: "Auction not found" });
+    }
+
+    if (auction.status === "ended") {
+      return res.status(400).send({ status: "error", message: "Auction already ended" });
+    }
+
+    auction.status = "ended";
+    auction.finalPrice = auction.currentPrice;
+    await auction.save();
+
+    if (auction.highestBidderEmail) {
+      console.log(`📢 ส่งอีเมลแจ้งเตือนถึงผู้ชนะ: ${auction.highestBidderEmail}`);
+      await sendWinnerEmail(auction.highestBidderEmail, auction.name, auction.finalPrice);
+    } else {
+      console.log(`⚠️ ไม่พบอีเมลของผู้ชนะสำหรับ: ${auction.name}`);
+    }
+
+    res.status(200).send({ status: "success", message: `Auction ID ${id} forcibly ended` });
+  } catch (err) {
+    console.error("❌ Error forcing end auction:", err);
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+

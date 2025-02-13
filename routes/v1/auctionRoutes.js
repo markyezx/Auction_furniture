@@ -30,5 +30,13 @@ router.post("/force-end-auctions", async (req, res) => {
   }
 });
 
+router.post("/force-end-auction/:id", async (req, res) => {
+  try {
+    await forceEndAuctionById(req, res);
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
 
 module.exports = router;

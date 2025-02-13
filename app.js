@@ -138,13 +138,16 @@ const cron = require("node-cron");
 const { endAuctions } = require("./controllers/auctionController");
 
 // รันทุกๆ 1 นาที
-cron.schedule("*/1 * * * *", async () => {
-  console.log("🔄 Checking for expired auctions...");
-  await endAuctions();
-});
+//cron.schedule("*/1 * * * *", async () => {
+  //console.log("🔄 Checking for expired auctions...");
+  //await endAuctions();
+//});
 
 app.use(express.json()); // ✅ รองรับ JSON body
 app.use(express.urlencoded({ extended: true })); // ✅ รองรับ Form Data
+
+const v1PaymentRoutes = require("./routes/v1/paymentRoutes");
+app.use("/api/v1/payments", v1PaymentRoutes);
 
 //? Profile Endpoints
 const v1ProfileRouter = require("./routes/v1/profileRoutes");

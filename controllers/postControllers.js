@@ -5,7 +5,6 @@ require("dotenv").config({ path: `.env.${process.env.NODE_ENV}` });
 const redis = require("../app");
 const Post = require("../schemas/post.schema.js");
 
-
 // Controller สำหรับการอัปเดตโพสต์
 exports.updatePost = async (req, res) => {
     if (!req.body) {
@@ -71,7 +70,6 @@ exports.updatePost = async (req, res) => {
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
-
 
 // Controller สำหรับการลบโพสต์
 exports.deletePost = async (req, res) => {
