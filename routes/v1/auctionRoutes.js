@@ -1,14 +1,15 @@
 const express = require("express");
-const { createAuction, getAuctions, getAuctionById, placeBid, endAuctions, getAuctionHistory, getBidHistory ,forceEndAuctions } = require("../../controllers/auctionController");
+const { createAuction, getAuctions, getAuctionById, placeBid, endAuctions, getAuctionHistory, getBidHistory ,forceEndAuctions ,forceEndAuctionById } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 
 const router = express.Router();
 
+router.get("/", getAuctions);
+router.get("/:id", getAuctionById);
+
 router.use(checkLogin);
 
 router.post("/", createAuction);
-router.get("/", getAuctions);
-router.get("/:id", getAuctionById);
 router.post("/:id/bids", placeBid);
 router.get("/:id/history", getAuctionHistory); // 📌 ดูประวัติการประมูล
 router.get("/:id/bids", getBidHistory); // 📌 ดูประวัติการ Bid

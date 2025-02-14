@@ -33,7 +33,7 @@ exports.createAuction = async (req, res) => {
   }
 };
 
-
+// ✅ GET: ดึงรายละเอียดของประมูล
 exports.getAuctionById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -42,15 +42,18 @@ exports.getAuctionById = async (req, res) => {
     }
     const auction = await Auction.findById(id).populate("highestBidder", "name email")
       .populate({ path: "bids", select: "user amount createdAt", populate: { path: "user", select: "name" } });
+
     if (!auction) {
       return res.status(404).send({ status: "error", message: "Auction not found" });
     }
+
     res.status(200).send({ status: "success", data: auction });
   } catch (err) {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
 
+// ✅ GET: ดึงรายการประมูลทั้งหมด
 exports.getAuctions = async (req, res) => {
   try {
     const auctions = await Auction.find().populate("highestBidder", "name email");
@@ -222,13 +225,11 @@ exports.forceEndAuctions = async () => {
 exports.forceEndAuctionById = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
-    }
 
     console.log(`🚨 กำลังบังคับปิดการประมูล ID: ${id}`);
 
-    const auction = await Auction.findById(id).select("name highestBidderEmail currentPrice status");
+    // ✅ ดึงข้อมูลการประมูล พร้อม populate ผู้ชนะ
+    const auction = await Auction.findById(id).populate("highestBidder", "email");
 
     if (!auction) {
       return res.status(404).send({ status: "error", message: "Auction not found" });
@@ -242,9 +243,12 @@ exports.forceEndAuctionById = async (req, res) => {
     auction.finalPrice = auction.currentPrice;
     await auction.save();
 
-    if (auction.highestBidderEmail) {
-      console.log(`📢 ส่งอีเมลแจ้งเตือนถึงผู้ชนะ: ${auction.highestBidderEmail}`);
-      await sendWinnerEmail(auction.highestBidderEmail, auction.name, auction.finalPrice);
+    // ✅ ตรวจสอบว่า highestBidder มี email หรือไม่
+    const winnerEmail = auction.highestBidder?.email || auction.highestBidderEmail;
+    
+    if (winnerEmail) {
+      console.log(`📢 ส่งอีเมลแจ้งเตือนถึงผู้ชนะ: ${winnerEmail}`);
+      await sendWinnerEmail(winnerEmail, auction.name, auction.finalPrice);
     } else {
       console.log(`⚠️ ไม่พบอีเมลของผู้ชนะสำหรับ: ${auction.name}`);
     }
@@ -255,4 +259,3 @@ exports.forceEndAuctionById = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
-
