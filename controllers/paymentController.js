@@ -110,3 +110,26 @@ exports.uploadSlip = async (req, res) => {
     res.status(500).json({ error: "เกิดข้อผิดพลาดภายในระบบ" });
   }
 };
+
+const checkPaymentsAutomatically = async () => {
+  console.log("🔄 กำลังตรวจสอบสถานะการชำระเงิน...");
+  try {
+    const pendingPayments = await QRCodeModel.find({ isPaid: false, expiresAt: { $gte: new Date() } });
+
+    for (const payment of pendingPayments) {
+      // 📌 สมมติว่าเราเชื่อมต่อ API ธนาคารเพื่อตรวจสอบสถานะ
+      const isPaid = await checkBankPaymentStatus(payment.payload); 
+
+      if (isPaid) {
+        payment.isPaid = true;
+        await payment.save();
+        console.log(`✅ อัปเดตการชำระเงินสำเร็จ: ${payment._id}`);
+      }
+    }
+  } catch (error) {
+    console.error("❌ เกิดข้อผิดพลาดในการตรวจสอบการชำระเงิน:", error);
+  }
+};
+
+// 📌 รันตรวจสอบทุกๆ 5 นาที
+setInterval(checkPaymentsAutomatically, 5 * 60 * 1000);

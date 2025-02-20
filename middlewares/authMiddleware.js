@@ -1,20 +1,24 @@
-const jwt = require("jsonwebtoken");
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
+// Middleware สำหรับตรวจสอบการเข้าสู่ระบบ
 const checkLogin = (req, res, next) => {
-  const token = req.cookies?.accessToken || req.headers.authorization?.split(" ")[1];
+  const token = req.cookies.accessToken;
 
   if (!token) {
-    return res.status(401).json({ status: "error", message: "Unauthorized: No token provided" });
+    return res.status(401).json({ message: 'Unauthorized, token missing' });
   }
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET);
-    req.user = decoded; // ✅ กำหนดค่า req.user
-    console.log("✅ User Authenticated:", req.user);
+  // ตรวจสอบ validity ของ token
+  jwt.verify(token, process.env.JWT_ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Unauthorized, invalid token' });
+    }
+
+    // ถ้า token ถูกต้อง, ให้ proceed กับการทำงานต่อไป
+    req.user = decoded; // ใส่ข้อมูลผู้ใช้ไว้ใน request
     next();
-  } catch (err) {
-    return res.status(401).json({ status: "error", message: "Invalid or expired token" });
-  }
+  });
 };
 
 module.exports = { checkLogin };

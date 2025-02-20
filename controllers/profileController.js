@@ -2,6 +2,7 @@ const Profile = require("../schemas/v1/profile.schema");
 const User = require("../schemas/v1/user.schema");
 const { isValidObjectId } = require("mongoose");
 const { uploadImage } = require("../controllers/fileUploadControllers");
+const multer = require('multer') // ✅ ต้องเพิ่ม multer ที่นี่
 
 // 📌 ดึงข้อมูลโปรไฟล์
 exports.getProfile = async (req, res) => {
@@ -39,25 +40,31 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// 📌 อัปโหลดรูปโปรไฟล์
-exports.uploadProfileImage = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).send({ status: "error", message: "No file uploaded" });
-    }
-    const userId = req.user.userId;
-    const fileUrl = await uploadImage(req.file.buffer, `profile/${userId}.jpg`);
-
-    const profile = await Profile.findOneAndUpdate({ user: userId }, { profileImage: fileUrl }, { new: true });
-
-    if (!profile) {
-      return res.status(404).send({ status: "error", message: "Profile not found" });
-    }
-    res.status(200).send({ status: "success", data: { imageUrl: fileUrl } });
-  } catch (err) {
-    res.status(500).send({ status: "error", message: err.message });
+// 📌 ตั้งค่าการอัปโหลดไฟล์ด้วย `multer`
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'public/uploads/') // ✅ เก็บไฟล์ในโฟลเดอร์ `public/uploads/`
+  },
+  filename: (req, file, cb) => {
+    cb(null, file.fieldname + '-' + Date.now() + path.extname(file.originalname))
   }
-};
+})
+
+const upload = multer({ storage })
+
+// 📌 อัปโหลดรูปโปรไฟล์
+exports.uploadProfileImage = (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ status: "fail", message: "กรุณาอัปโหลดรูปภาพ" })
+  }
+
+  const imageUrl = `/uploads/${req.file.filename}` // ✅ URL ของรูปที่อัปโหลด
+
+  // ✅ อัปเดตข้อมูลในฐานข้อมูล
+  Profile.findOneAndUpdate({ email: req.user.email }, { profileImage: imageUrl }, { new: true })
+    .then(updatedProfile => res.json({ status: "success", data: updatedProfile }))
+    .catch(err => res.status(500).json({ status: "fail", message: err.message }))
+}
 
 // 📌 เพิ่มฟังก์ชัน getLoginHistory
 exports.getLoginHistory = async (req, res) => {

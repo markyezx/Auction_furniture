@@ -50,4 +50,34 @@ const sendWinnerEmail = async (email, auctionName, finalPrice) => {
   }
 };
 
-module.exports = sendWinnerEmail;
+const sendNextWinnerEmail = async (email, auctionName, newPrice) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAIL_HOST,
+      port: process.env.MAIL_PORT,
+      secure: true,
+      auth: {
+        user: process.env.MAIL_USERNAME,
+        pass: process.env.MAIL_PASSWORD,
+      },
+    });
+
+    const mailOptions = {
+      from: `Auction System <${process.env.MAIL_USERNAME}>`,
+      to: email,
+      subject: `🎉 คุณได้รับโอกาสในการซื้อ ${auctionName}!`,
+      html: `<p>ผู้ชนะเดิมไม่ได้ทำการชำระเงินภายในเวลาที่กำหนด</p>
+             <p>คุณเป็นผู้บิดอันดับถัดไปสำหรับ <strong>${auctionName}</strong></p>
+             <p>ราคาที่คุณบิดไว้: <strong>${newPrice} บาท</strong></p>
+             <p>กรุณาชำระเงินภายใน 24 ชั่วโมงเพื่อรับสิทธิ์</p>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ อีเมลแจ้งเตือนถูกส่งไปยัง: ${email}`);
+  } catch (error) {
+    console.error("❌ Error sending email:", error);
+  }
+};
+
+
+module.exports = sendWinnerEmail,sendNextWinnerEmail ;

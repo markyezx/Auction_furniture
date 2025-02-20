@@ -1,29 +1,44 @@
 // controllers/auctionController.js
 const Auction = require("../schemas/v1/auction.schema");
 const Bid = require("../schemas/v1/bid.schema");
+const User = require("../schemas/v1/user.schema"); // ✅ เปลี่ยน path ตามที่ถูกต้อง
 const sendWinnerEmail = require("../modules/email/emailService");
+const sendNextWinnerEmail = require("../modules/email/emailService");
 const { isValidObjectId } = require("mongoose");
 const mongoose = require("mongoose");
 
 exports.createAuction = async (req, res) => {
   try {
-    const { name, startingPrice, minimumBidIncrement = 10, expiresAt, image } = req.body;
+    const { name, startingPrice, minimumBidIncrement = 10, image, category } = req.body;
 
-    if (!name || !startingPrice || !expiresAt) {
+    if (!name || !startingPrice || !category) {
       return res.status(400).send({ status: "error", message: "Missing required fields" });
     }
-    if (new Date(expiresAt) <= new Date()) {
-      return res.status(400).send({ status: "error", message: "Invalid expiration date" });
+
+    const validCategories = [
+      "designer_toys", "vinyl_figures", "resin_figures", "blind_box",
+      "anime_figures", "movie_game_collectibles", "robot_mecha",
+      "soft_vinyl", "kaiju_monsters", "diy_custom", "retro_vintage",
+      "limited_edition", "gunpla_models", "plastic_models"
+    ];
+
+    if (!validCategories.includes(category)) {
+      return res.status(400).send({ status: "error", message: "Invalid category" });
     }
+
+    // ✅ ตั้งเวลาหมดอายุอัตโนมัติเป็น 24 ชั่วโมงนับจากเวลาสร้าง
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24); 
 
     const auction = new Auction({
       name,
-      image: image || "https://example.com/default.jpg", // ✅ ตั้งค่า default image
+      image: image || "https://example.com/default.jpg",
       startingPrice,
       currentPrice: startingPrice,
       minimumBidIncrement,
-      expiresAt: new Date(expiresAt),
+      expiresAt,  // ✅ กำหนดค่าอัตโนมัติ
       owner: req.user.userId,
+      category,
     });
 
     await auction.save();
@@ -95,32 +110,31 @@ exports.placeBid = async (req, res) => {
       return res.status(400).send({ status: "error", message: "Bid too low" });
     }
 
-    // ✅ ดึง Email จาก Token แทนที่จะใช้จากคุกกี้อย่างเดียว
-    const token = req.cookies?.accessToken || req.headers.authorization?.split(" ")[1];
-    console.log("📌 Token ที่ใช้:", token);
-
-    if (!token) {
-      return res.status(401).send({ status: "error", message: "Unauthorized: No token found" });
-    }
-
     const bidderEmail = req.cookies?.email ? decodeURIComponent(req.cookies.email) : null;
-    console.log("📌 ค่าของ bidderEmail:", bidderEmail);
-
     if (!bidderEmail) {
       return res.status(400).send({ status: "error", message: "User email not found in cookies" });
     }
 
+    // ✅ บันทึกข้อมูลการบิดใหม่
     const bid = new Bid({ auction: auction._id, user: req.user.userId, amount });
 
     auction.currentPrice = amount;
     auction.highestBidder = req.user.userId;
-    auction.highestBidderEmail = bidderEmail; // ✅ บันทึกอีเมลจากคุกกี้
+    auction.highestBidderEmail = bidderEmail;
     auction.bids.push(bid._id);
+
+    // ✅ เพิ่มข้อมูลใน history ของ auction
+    auction.history.push({
+      user: req.user.userId,
+      action: "BID",
+      amount: amount,
+      timestamp: new Date(),
+    });
 
     await auction.save();
     await bid.save();
 
-    console.log("✅ อัปเดต highestBidderEmail สำเร็จ:", bidderEmail);
+    console.log("✅ บันทึกประวัติการบิดสำเร็จ");
 
     res.status(201).send({ status: "success", data: { auction, bid } });
   } catch (err) {
@@ -134,13 +148,8 @@ exports.endAuctions = async () => {
     console.log("📌 กำลังปิดการประมูลที่หมดเวลา...");
 
     const now = new Date();
-    console.log(`📌 เวลาปัจจุบันของเซิร์ฟเวอร์: ${now.toISOString()}`);
-
-    // ✅ ลองดึงข้อมูลที่หมดอายุโดยไม่เช็ค status
-    const expiredAuctions = await Auction.find({ expiresAt: { $lte: now } })
+    const expiredAuctions = await Auction.find({ expiresAt: { $lte: now }, status: "active" })
       .populate("highestBidder", "email");
-
-    console.log(`📌 พบการประมูลที่หมดเวลาแล้ว: ${expiredAuctions.length} รายการ`);
 
     if (expiredAuctions.length === 0) {
       console.log("⚠️ ไม่มีการประมูลที่ต้องปิด");
@@ -148,17 +157,14 @@ exports.endAuctions = async () => {
     }
 
     for (const auction of expiredAuctions) {
-      if (auction.status === "ended") {
-        console.log(`⏭ การประมูล "${auction.name}" ถูกปิดไปแล้ว`);
-        continue; // ข้ามถ้าเคยปิดไปแล้ว
-      }
-
       auction.status = "ended";
       auction.finalPrice = auction.currentPrice;
+      auction.paymentDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000); // ✅ กำหนดเวลาชำระเงิน 24 ชม.
+
       await auction.save();
 
       if (auction.highestBidder?.email) {
-        console.log(`📢 กำลังส่งอีเมลแจ้งเตือนถึงผู้ชนะ: ${auction.highestBidder.email}`);
+        console.log(`📢 ส่งอีเมลแจ้งผู้ชนะ: ${auction.highestBidder.email}`);
         await sendWinnerEmail(auction.highestBidder.email, auction.name, auction.finalPrice);
       } else {
         console.log("⚠️ ไม่พบอีเมลของผู้ชนะ");
@@ -178,7 +184,11 @@ exports.getBidHistory = async (req, res) => {
       return res.status(400).send({ status: "error", message: "Invalid auction ID" });
     }
 
-    const bids = await Bid.find({ auction: id }).populate("user", "name email").sort({ createdAt: -1 });
+    // ✅ ดึงประวัติการบิดทั้งหมดของการประมูล พร้อมข้อมูลผู้ใช้
+    const bids = await Bid.find({ auction: id })
+      .populate("user", "name email")
+      .sort({ createdAt: -1 }); // 📌 เรียงจากล่าสุดไปเก่าสุด
+
     if (!bids.length) {
       return res.status(404).send({ status: "error", message: "No bids found" });
     }
@@ -188,6 +198,35 @@ exports.getBidHistory = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
+
+exports.getHighestBidder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
+
+    const auction = await Auction.findById(id).populate("highestBidder", "name email");
+    if (!auction) {
+      return res.status(404).send({ status: "error", message: "Auction not found" });
+    }
+
+    if (!auction.highestBidder) {
+      return res.status(404).send({ status: "error", message: "No bids placed yet" });
+    }
+
+    res.status(200).send({
+      status: "success",
+      data: {
+        highestBidder: auction.highestBidder,
+        currentPrice: auction.currentPrice,
+      },
+    });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
 
 exports.forceEndAuctions = async () => {
   try {
@@ -259,3 +298,94 @@ exports.forceEndAuctionById = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
+
+exports.forceExpirePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🚨 กำลังบังคับให้หมดเวลาชำระเงินสำหรับการประมูล ID: ${id}`);
+
+    const auction = await Auction.findById(id).populate("bids").populate("highestBidder", "email");
+    if (!auction) return res.status(404).send({ status: "error", message: "Auction not found" });
+
+    if (auction.status !== "ended") {
+      return res.status(400).send({ status: "error", message: "Auction is still active" });
+    }
+
+    if (!auction.paymentDeadline) {
+      console.log("⚠️ ไม่พบ paymentDeadline → กำหนดค่าใหม่เป็นเวลาปัจจุบัน");
+      auction.paymentDeadline = new Date();
+      await auction.save();
+    }
+
+    const allBids = await Bid.find({ auction: auction._id }).sort({ amount: -1 });
+    console.log("🔍 รายการบิดทั้งหมด:", allBids);
+
+    if (allBids.length > 1) {
+      const nextBidder = allBids[1]; // 📌 ผู้บิดอันดับถัดไป
+      console.log("🔍 ผู้บิดอันดับถัดไป:", nextBidder);
+
+      if (!nextBidder?.user) {
+        console.log("⚠️ nextBidder.user เป็น undefined หรือ null");
+        return res.status(400).send({ status: "error", message: "Next bidder data is missing" });
+      }
+
+      const nextBidderUser = await User.findById(nextBidder.user);
+      console.log("🔍 ข้อมูลผู้บิดอันดับถัดไปใน User collection:", nextBidderUser);
+
+      // ✅ ตรวจสอบว่าโครงสร้างข้อมูลของ nextBidderUser ถูกต้อง
+      console.log("📧 ตรวจสอบค่า nextBidderUser:", JSON.stringify(nextBidderUser, null, 2));
+
+      // ✅ ดึงอีเมลจากโครงสร้างข้อมูลที่ถูกต้อง
+      const nextBidderEmail = nextBidderUser?.email || nextBidderUser?.user?.email || null;
+      console.log("📧 อีเมลของผู้บิดคนถัดไป:", nextBidderEmail);
+
+      if (!nextBidderEmail) {
+        console.log("⚠️ ไม่พบอีเมลของผู้บิดอันดับถัดไป");
+        return res.status(400).send({ status: "error", message: "Next bidder has no email" });
+      }
+
+      console.log(`📢 ส่งอีเมลไปยังผู้บิดคนถัดไป: ${nextBidderEmail}`);
+      await sendNextWinnerEmail(nextBidderEmail, auction.name, nextBidder.amount);
+
+      auction.highestBidder = nextBidder.user;
+      auction.highestBidderEmail = nextBidderEmail;
+      auction.finalPrice = nextBidder.amount;
+      auction.paymentDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000); // ✅ ให้เวลา 24 ชม.
+      await auction.save();
+    } else {
+      console.log(`⚠️ ไม่มีผู้บิดคนถัดไปสำหรับ ${auction.name}`);
+      return res.status(400).send({ status: "error", message: "No next bidder available" });
+    }
+
+    res.status(200).send({ status: "success", message: "Payment time expired and next bidder assigned" });
+  } catch (err) {
+    console.error("❌ Error forcing payment expiration:", err);
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
+exports.getCategories = async (req, res) => {
+  try {
+    const categories = [
+      { key: "designer_toys", name: "Designer Toys" },
+      { key: "vinyl_figures", name: "Vinyl Figures" },
+      { key: "resin_figures", name: "Resin Figures" },
+      { key: "blind_box", name: "Blind Box Toys" },
+      { key: "anime_figures", name: "Anime Figures" },
+      { key: "movie_game_collectibles", name: "Movie & Game Collectibles" },
+      { key: "robot_mecha", name: "Robot & Mecha Toys" },
+      { key: "soft_vinyl", name: "Soft Vinyl (Sofubi)" },
+      { key: "kaiju_monsters", name: "Kaiju & Monsters" },
+      { key: "diy_custom", name: "DIY & Custom Toys" },
+      { key: "retro_vintage", name: "Retro & Vintage Toys" },
+      { key: "limited_edition", name: "Limited Edition & Exclusive" },
+      { key: "gunpla_models", name: "Gunpla & Mecha Models" }, // ✅ เพิ่มกันพลา
+      { key: "plastic_models", name: "Plastic Model Kits" } // ✅ เพิ่มโมเดลพลาสติก
+    ];
+    res.status(200).send({ status: "success", data: categories });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
+

@@ -159,72 +159,82 @@ const register = async (req, res) => {
 };
 
 const login = async (req, res, next) => {
-  console.log("📌 Request Headers:", req.headers);
+  try {
+    console.log("📌 Request Headers:", req.headers);
 
-  passport.authenticate("local", { session: false }, async (err, foundUser, info) => {
-    if (err) return next(err);
-    if (!foundUser) return res.status(401).json({ status: "error", message: info?.message || "Unauthorized" });
+    passport.authenticate("local", { session: false }, async (err, foundUser, info) => {
+      if (err) return next(err);
+      if (!foundUser) return res.status(401).json({ status: "error", message: info?.message || "Unauthorized" });
 
-    const accessToken = generateToken(
-      { userId: foundUser._id },
-      process.env.JWT_ACCESS_TOKEN_SECRET,
-      process.env.ACCESS_TOKEN_EXPIRES
-    );
+      const accessToken = generateToken(
+        { userId: foundUser._id },
+        process.env.JWT_ACCESS_TOKEN_SECRET,
+        process.env.ACCESS_TOKEN_EXPIRES
+      );
 
-    const refreshToken = generateToken(
-      { userId: foundUser._id },
-      process.env.JWT_REFRESH_TOKEN_SECRET,
-      process.env.REFRESH_TOKEN_EXPIRES
-    );
+      const refreshToken = generateToken(
+        { userId: foundUser._id },
+        process.env.JWT_REFRESH_TOKEN_SECRET,
+        process.env.REFRESH_TOKEN_EXPIRES
+      );
 
-    await redis.set(`RefreshToken_${foundUser._id}`, refreshToken, "EX", 7 * 24 * 60 * 60); // หมดอายุใน 7 วัน
+      await redis.set(`RefreshToken_${foundUser._id}`, refreshToken, "EX", 7 * 24 * 60 * 60); // หมดอายุใน 7 วัน
 
-    res.cookie("accessToken", accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV !== "development",
-      sameSite: process.env.NODE_ENV !== "development" ? "None" : "Lax",
-      maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
-    });
+// ตั้งค่าคุกกี้สำหรับ accessToken ใน backend
+      res.cookie('accessToken', accessToken, {
+        httpOnly: true, // เพื่อไม่ให้เข้าถึงจาก JavaScript
+        secure: process.env.NODE_ENV !== 'development', // ใช้เฉพาะใน HTTPS
+        sameSite: 'Strict', // สำหรับการส่ง cookies ใน cross-origin requests
+        maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
+      });
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV !== "development",
-      sameSite: process.env.NODE_ENV !== "development" ? "None" : "Lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
-    });
 
-    // ✅ ตั้งค่าคุกกี้ `email`
-    res.cookie("email", foundUser.user?.email || foundUser.email, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV !== "development",
-      sameSite: "Lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
-    });
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== "development",
+        sameSite: process.env.NODE_ENV !== "development" ? "None" : "Lax",
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
+      });
 
-    console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]);
+      res.cookie("email", foundUser.user?.email || foundUser.email, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== "development",
+        sameSite: "Lax",
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 วัน
+      });
 
-    await Profile.findOneAndUpdate(
-      { user: foundUser._id },
-      {
-        $push: {
-          loginHistory: {
-            ipAddress: req.ip,
-            userAgent: req.headers["user-agent"],
-            timestamp: new Date(),
+      console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]);
+
+      // บันทึกประวัติการเข้าสู่ระบบ
+      await Profile.findOneAndUpdate(
+        { user: foundUser._id },
+        {
+          $push: {
+            loginHistory: {
+              ipAddress: req.ip,
+              userAgent: req.headers["user-agent"],
+              timestamp: new Date(),
+            }
           }
+        },
+        { new: true, upsert: true }
+      );
+
+      // ส่ง response ก่อนที่จะตั้งค่าคุกกี้
+      return res.status(200).json({
+        status: "success",
+        message: "Login successful",
+        user: { id: foundUser._id, email: foundUser.user?.email || foundUser.email },
+        tokens: {
+          accessToken,
+          refreshToken
         }
-      },
-      { new: true, upsert: true }
-    );
-
-    res.status(200).json({
-      status: "success",
-      message: "Login successful",
-      user: { id: foundUser._id, email: foundUser.user?.email || foundUser.email },
-    });
-  })(req, res, next);
+      });
+    })(req, res, next);
+  } catch (err) {
+    next(err);
+  }
 };
-
 
 const logout = async (req, res, next) => {
   console.log("📌 Logout function triggered");
