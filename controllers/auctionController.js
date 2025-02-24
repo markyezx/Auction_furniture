@@ -26,9 +26,9 @@ exports.createAuction = async (req, res) => {
       return res.status(400).send({ status: "error", message: "Invalid category" });
     }
 
-    // ✅ ตั้งเวลาหมดอายุอัตโนมัติเป็น 24 ชั่วโมงนับจากเวลาสร้าง
+    // ตั้งเวลาหมดอายุอัตโนมัติ
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); 
+    expiresAt.setMinutes(expiresAt.getMinutes() + 5); 
 
     const auction = new Auction({
       name,
@@ -36,7 +36,7 @@ exports.createAuction = async (req, res) => {
       startingPrice,
       currentPrice: startingPrice,
       minimumBidIncrement,
-      expiresAt,  // ✅ กำหนดค่าอัตโนมัติ
+      expiresAt,
       owner: req.user.userId,
       category,
     });
@@ -45,6 +45,43 @@ exports.createAuction = async (req, res) => {
     res.status(201).send({ status: "success", data: auction });
   } catch (err) {
     res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
+exports.checkAndEndAuctions = async () => {
+  try {
+    console.log("📌 กำลังตรวจสอบการประมูลที่หมดเวลา...");
+
+    const now = new Date();
+    const expiredAuctions = await Auction.find({ expiresAt: { $lte: now }, status: "active" })
+      .populate("highestBidder", "email name");
+
+    if (expiredAuctions.length === 0) {
+      console.log("⚠️ ไม่มีการประมูลที่ต้องปิด");
+      return;
+    }
+
+    for (const auction of expiredAuctions) {
+      console.log(`🚨 ปิดการประมูล: ${auction.name}`);
+
+      auction.status = "ended";
+      auction.finalPrice = auction.currentPrice;
+      await auction.save();
+
+      // ✅ ตรวจสอบว่ามีผู้ชนะหรือไม่
+      const winnerEmail = auction.highestBidder?.email || auction.highestBidderEmail;
+      
+      if (winnerEmail) {
+        console.log(`📢 ส่งอีเมลแจ้งเตือนถึงผู้ชนะ: ${winnerEmail}`);
+        await sendWinnerEmail(winnerEmail, auction.name, auction.finalPrice);
+      } else {
+        console.log(`⚠️ ไม่พบอีเมลของผู้ชนะสำหรับ: ${auction.name}`);
+      }
+    }
+
+    console.log(`✅ ปิดการประมูลสำเร็จ ${expiredAuctions.length} รายการ`);
+  } catch (err) {
+    console.error("❌ Error checking and ending auctions:", err);
   }
 };
 
@@ -110,33 +147,31 @@ exports.placeBid = async (req, res) => {
       return res.status(400).send({ status: "error", message: "Bid too low" });
     }
 
-    const bidderEmail = req.cookies?.email ? decodeURIComponent(req.cookies.email) : null;
-    if (!bidderEmail) {
-      return res.status(400).send({ status: "error", message: "User email not found in cookies" });
+    // ✅ ดึงข้อมูลผู้ใช้จาก `user.name`
+    const bidder = await User.findById(req.user.userId).select("user.name email");
+    if (!bidder) {
+      return res.status(400).send({ status: "error", message: "User not found" });
     }
 
-    // ✅ บันทึกข้อมูลการบิดใหม่
-    const bid = new Bid({ auction: auction._id, user: req.user.userId, amount });
+    // ✅ บันทึกข้อมูลการบิดใหม่ พร้อมชื่อผู้ใช้
+    const bid = new Bid({
+      auction: auction._id,
+      user: req.user.userId,
+      amount,
+      userName: bidder.user.name, // ✅ ดึง `user.name` แทน `name`
+    });
 
     auction.currentPrice = amount;
     auction.highestBidder = req.user.userId;
-    auction.highestBidderEmail = bidderEmail;
+    auction.highestBidderEmail = bidder.email;
     auction.bids.push(bid._id);
-
-    // ✅ เพิ่มข้อมูลใน history ของ auction
-    auction.history.push({
-      user: req.user.userId,
-      action: "BID",
-      amount: amount,
-      timestamp: new Date(),
-    });
 
     await auction.save();
     await bid.save();
 
-    console.log("✅ บันทึกประวัติการบิดสำเร็จ");
+    console.log(`✅ บันทึกประวัติการบิดสำเร็จ โดย: ${bidder.user.name}`);
 
-    res.status(201).send({ status: "success", data: { auction, bid } });
+    res.status(201).send({ status: "success", data: { auction, bid, bidderName: bidder.user.name } });
   } catch (err) {
     console.error("❌ Error placing bid:", err);
     res.status(500).send({ status: "error", message: err.message });
@@ -159,7 +194,7 @@ exports.endAuctions = async () => {
     for (const auction of expiredAuctions) {
       auction.status = "ended";
       auction.finalPrice = auction.currentPrice;
-      auction.paymentDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000); // ✅ กำหนดเวลาชำระเงิน 24 ชม.
+      auction.paymentDeadline = new Date(Date.now() + 5 * 60 * 1000);
 
       await auction.save();
 
@@ -184,10 +219,10 @@ exports.getBidHistory = async (req, res) => {
       return res.status(400).send({ status: "error", message: "Invalid auction ID" });
     }
 
-    // ✅ ดึงประวัติการบิดทั้งหมดของการประมูล พร้อมข้อมูลผู้ใช้
+    // ✅ ดึงประวัติการบิดทั้งหมดของการประมูล พร้อม `user.name`
     const bids = await Bid.find({ auction: id })
-      .populate("user", "name email")
-      .sort({ createdAt: -1 }); // 📌 เรียงจากล่าสุดไปเก่าสุด
+      .populate("user", "user.name email") // ✅ ดึง `user.name` แทน `name`
+      .sort({ createdAt: -1 });
 
     if (!bids.length) {
       return res.status(404).send({ status: "error", message: "No bids found" });
@@ -198,6 +233,7 @@ exports.getBidHistory = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
+
 
 exports.getHighestBidder = async (req, res) => {
   try {
@@ -226,7 +262,6 @@ exports.getHighestBidder = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
-
 
 exports.forceEndAuctions = async () => {
   try {
@@ -350,7 +385,7 @@ exports.forceExpirePayment = async (req, res) => {
       auction.highestBidder = nextBidder.user;
       auction.highestBidderEmail = nextBidderEmail;
       auction.finalPrice = nextBidder.amount;
-      auction.paymentDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000); // ✅ ให้เวลา 24 ชม.
+      auction.paymentDeadline = new Date(Date.now() + 5 * 60 * 1000); // ✅ ให้เวลา 24 ชม.
       await auction.save();
     } else {
       console.log(`⚠️ ไม่มีผู้บิดคนถัดไปสำหรับ ${auction.name}`);

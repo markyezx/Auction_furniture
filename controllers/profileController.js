@@ -58,13 +58,13 @@ exports.uploadProfileImage = (req, res) => {
     return res.status(400).json({ status: "fail", message: "กรุณาอัปโหลดรูปภาพ" })
   }
 
-  const imageUrl = `/uploads/${req.file.filename}` // ✅ URL ของรูปที่อัปโหลด
+  const imageUrl = `/uploads/${req.file.filename}` // ✅ URL รูปที่อัปโหลด
 
-  // ✅ อัปเดตข้อมูลในฐานข้อมูล
   Profile.findOneAndUpdate({ email: req.user.email }, { profileImage: imageUrl }, { new: true })
-    .then(updatedProfile => res.json({ status: "success", data: updatedProfile }))
+    .then(updatedProfile => res.json({ status: "success", imageUrl: imageUrl })) // ✅ ส่ง URL กลับไปที่ Frontend
     .catch(err => res.status(500).json({ status: "fail", message: err.message }))
 }
+
 
 // 📌 เพิ่มฟังก์ชัน getLoginHistory
 exports.getLoginHistory = async (req, res) => {

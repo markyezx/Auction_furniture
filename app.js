@@ -142,6 +142,11 @@ const { endAuctions } = require("./controllers/auctionController");
   //console.log("🔄 Checking for expired auctions...");
   //await endAuctions();
 //});
+const { checkAndEndAuctions } = require("./controllers/auctionController");
+
+// ✅ ให้ `checkAndEndAuctions()` ทำงานทุกๆ 10 วินาที
+setInterval(checkAndEndAuctions, 10000);
+
 
 app.use(express.json()); // ✅ รองรับ JSON body
 app.use(express.urlencoded({ extended: true })); // ✅ รองรับ Form Data

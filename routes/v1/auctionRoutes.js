@@ -12,12 +12,11 @@ router.get("/", getAuctions); // ✅ ดึงรายการประมู�
 router.get("/categories", getCategories); // ✅ ดึงหมวดหมู่ที่รองรับ
 router.get("/:id", getAuctionById); // ✅ ดึงรายละเอียดการประมูล
 router.get("/:id/history", getAuctionHistory); // ✅ ดูประวัติการประมูล
-
+router.get("/:id/bids", getBidHistory); // ✅ ดูประวัติการบิด
 router.get("/:id/highest-bidder", getHighestBidder); // ✅ ดูผู้บิดสูงสุด ณ เวลานั้น
 
 router.use(checkLogin);
 
-router.get("/:id/bids", getBidHistory); // ✅ ดูประวัติการบิด
 router.post("/", createAuction); // ✅ สร้างการประมูลใหม่
 router.post("/:id/bids", placeBid); // ✅ ทำการบิด
 router.post("/end-auctions", async (req, res) => {

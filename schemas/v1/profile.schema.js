@@ -5,7 +5,7 @@ const profileSchema = new mongoose.Schema({
   name: { type: String, required: true },
   phone: { type: String },
   address: { type: String },
-  profileImage: { type: String }, // URL ของรูปโปรไฟล์
+  profileImage: { type: String, default: "/images/default-profile.jpg" }, // ✅ เพิ่มเก็บรูป
   loginHistory: [
     {
       ipAddress: { type: String },
