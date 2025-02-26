@@ -9,30 +9,58 @@ const mongoose = require("mongoose");
 
 exports.createAuction = async (req, res) => {
   try {
-    const { name, startingPrice, minimumBidIncrement = 10, image, category } = req.body;
+    const { name, startingPrice, minimumBidIncrement = 10, category } = req.body;
 
     if (!name || !startingPrice || !category) {
       return res.status(400).send({ status: "error", message: "Missing required fields" });
     }
 
-    const validCategories = [
-      "designer_toys", "vinyl_figures", "resin_figures", "blind_box",
-      "anime_figures", "movie_game_collectibles", "robot_mecha",
-      "soft_vinyl", "kaiju_monsters", "diy_custom", "retro_vintage",
-      "limited_edition", "gunpla_models", "plastic_models"
+    // ✅ เปลี่ยน categories เป็น validCategories
+    const categories = [
+      { id: "designer_toys", name: "Designer Toys" },
+      { id: "vinyl_figures", name: "Vinyl Figures" },
+      { id: "resin_figures", name: "Resin Figures" },
+      { id: "blind_box", name: "Blind Box" },
+      { id: "anime_figures", name: "Anime Figures" },
+      { id: "movie_game_collectibles", name: "Movie/Game Collectibles" },
+      { id: "robot_mecha", name: "Robot Mecha" },
+      { id: "soft_vinyl", name: "Soft Vinyl" },
+      { id: "kaiju_monsters", name: "Kaiju Monsters" },
+      { id: "diy_custom", name: "DIY Custom" },
+      { id: "retro_vintage", name: "Retro Vintage" },
+      { id: "limited_edition", name: "Limited Edition" },
+      { id: "gunpla_models", name: "Gunpla Models" },
+      { id: "plastic_models", name: "Plastic Models" }
     ];
+
+    // ✅ ใช้ categories.map(c => c.id) แทน validCategories
+    const validCategories = categories.map(c => c.id);
 
     if (!validCategories.includes(category)) {
       return res.status(400).send({ status: "error", message: "Invalid category" });
     }
 
-    // ตั้งเวลาหมดอายุอัตโนมัติ
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).send({ status: "error", message: "ต้องอัปโหลดภาพสินค้าอย่างน้อย 1 ภาพ" });
+    }
+
+    if (req.files.length > 5) {
+      return res.status(400).send({ status: "error", message: "สามารถอัปโหลดภาพสินค้าได้ไม่เกิน 5 รูป" });
+    }
+
+    // ✅ แปลงไฟล์ภาพเป็น Base64 และเก็บข้อมูล MIME type
+    const images = req.files.map((file) => ({
+      data: file.buffer.toString("base64"),
+      contentType: file.mimetype,
+    }));
+
+    // ✅ ตั้งเวลาหมดอายุอัตโนมัติ
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 5); 
+    expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
     const auction = new Auction({
       name,
-      image: image || "https://example.com/default.jpg",
+      images,
       startingPrice,
       currentPrice: startingPrice,
       minimumBidIncrement,
@@ -44,6 +72,7 @@ exports.createAuction = async (req, res) => {
     await auction.save();
     res.status(201).send({ status: "success", data: auction });
   } catch (err) {
+    console.error("❌ Error creating auction:", err);
     res.status(500).send({ status: "error", message: err.message });
   }
 };
@@ -92,18 +121,28 @@ exports.getAuctionById = async (req, res) => {
     if (!isValidObjectId(id)) {
       return res.status(400).send({ status: "error", message: "Invalid auction ID" });
     }
-    const auction = await Auction.findById(id).populate("highestBidder", "name email")
-      .populate({ path: "bids", select: "user amount createdAt", populate: { path: "user", select: "name" } });
+
+    const auction = await Auction.findById(id).populate("highestBidder", "name email");
 
     if (!auction) {
       return res.status(404).send({ status: "error", message: "Auction not found" });
     }
 
-    res.status(200).send({ status: "success", data: auction });
+    // ✅ แปลงข้อมูลรูปภาพให้อยู่ในรูปแบบที่ใช้กับ <img>
+    const images = auction.images.map(img => `data:${img.contentType};base64,${img.data}`);
+
+    res.status(200).send({
+      status: "success",
+      data: {
+        ...auction.toObject(),
+        images, // ✅ ส่งกลับภาพในรูปแบบ Base64 ที่ใช้แสดงใน <img>
+      }
+    });
   } catch (err) {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
+
 
 // ✅ GET: ดึงรายการประมูลทั้งหมด
 exports.getAuctions = async (req, res) => {
