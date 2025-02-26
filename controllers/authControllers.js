@@ -180,14 +180,13 @@ const login = async (req, res, next) => {
 
       await redis.set(`RefreshToken_${foundUser._id}`, refreshToken, "EX", 7 * 24 * 60 * 60); // หมดอายุใน 7 วัน
 
-// ตั้งค่าคุกกี้สำหรับ accessToken ใน backend
-      res.cookie('accessToken', accessToken, {
-        httpOnly: true, // เพื่อไม่ให้เข้าถึงจาก JavaScript
-        secure: process.env.NODE_ENV !== 'development', // ใช้เฉพาะใน HTTPS
-        sameSite: 'Strict', // สำหรับการส่ง cookies ใน cross-origin requests
+      // ✅ ตั้งค่าคุกกี้สำหรับ accessToken
+      res.cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== "development",
+        sameSite: "Strict",
         maxAge: 1000 * 60 * 60, // 1 ชั่วโมง
       });
-
 
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
@@ -205,7 +204,7 @@ const login = async (req, res, next) => {
 
       console.log("📌 Cookies ที่ถูกตั้งค่า:", res.getHeaders()["set-cookie"]);
 
-      // บันทึกประวัติการเข้าสู่ระบบ
+      // ✅ บันทึกประวัติการเข้าสู่ระบบ
       await Profile.findOneAndUpdate(
         { user: foundUser._id },
         {
@@ -214,27 +213,27 @@ const login = async (req, res, next) => {
               ipAddress: req.ip,
               userAgent: req.headers["user-agent"],
               timestamp: new Date(),
-            }
-          }
+            },
+          },
         },
         { new: true, upsert: true }
       );
 
-      // ส่ง response ก่อนที่จะตั้งค่าคุกกี้
       return res.status(200).json({
         status: "success",
         message: "Login successful",
         user: { id: foundUser._id, email: foundUser.user?.email || foundUser.email },
         tokens: {
           accessToken,
-          refreshToken
-        }
+          refreshToken,
+        },
       });
     })(req, res, next);
   } catch (err) {
     next(err);
   }
 };
+
 
 const logout = async (req, res, next) => {
   console.log("📌 Logout function triggered");

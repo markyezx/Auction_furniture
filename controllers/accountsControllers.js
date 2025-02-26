@@ -10,6 +10,8 @@ const redis = require("../app");
 
 const sendVerifyEmail = require("../modules/email/sendVerifyEmail");
 const sendResetPasswordEmail = require("../modules/email/sendResetPasswordEmail");
+const sendPasswordChangeEmail = require("../modules/email/sendPasswordChangeEmail"); // ✅ นำเข้า emailService
+
 
 const user = require("../schemas/v1/user.schema");
 const User = require("../schemas/v1/user.schema");
@@ -19,48 +21,62 @@ const changePassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword) {
-      return res.status(400).send({ status: "error", message: "Both old and new passwords are required." });
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ status: "error", message: "Unauthorized: User ID not found" });
+    }
+
+    const userId = req.user.userId;
+    const userData = await User.findById(userId).select("+user.password user.email user.name");
+
+    console.log("🔍 DEBUG userData:", userData);
+    if (!userData) {
+      return res.status(404).json({ status: "error", message: "User not found." });
+    }
+
+    if (!userData.user || !userData.user.password) {
+      return res.status(500).json({ status: "error", message: "User password not found in database." });
+    }
+
+    if (oldPassword) {
+      console.log("🔍 DEBUG oldPassword:", oldPassword);
+
+      if (typeof oldPassword !== "string" || typeof userData.user.password !== "string") {
+        return res.status(400).json({ status: "error", message: "Invalid password format." });
+      }
+
+      const isMatch = await bcrypt.compare(oldPassword, userData.user.password);
+      console.log("🔍 DEBUG isMatch:", isMatch);
+
+      if (!isMatch) {
+        return res.status(400).json({ status: "error", message: "Old password is incorrect." });
+      }
+    } else {
+      console.log("⚠️ Warning: No oldPassword provided, skipping verification.");
     }
 
     if (newPassword.length < 8) {
-      return res.status(400).send({ status: "error", message: "New password must be at least 8 characters long." });
+      return res.status(400).json({ status: "error", message: "New password must be at least 8 characters long." });
     }
 
     const passwordStrengthRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     if (!passwordStrengthRegex.test(newPassword)) {
-      return res.status(400).send({
+      return res.status(400).json({
         status: "error",
         message: "New password must include at least one uppercase letter, one lowercase letter, one number, and one special character.",
       });
     }
 
-    const userId = req.user.userId; // ✅ ใช้ userId จาก token authentication
-    const userData = await User.findById(userId);
-
-    if (!userData) {
-      return res.status(404).send({ status: "error", message: "User not found." });
-    }
-
-    // ✅ ตรวจสอบรหัสผ่านเดิมก่อนเปลี่ยน
-    const isMatch = await bcrypt.compare(oldPassword, userData.password);
-    if (!isMatch) {
-      return res.status(400).send({ status: "error", message: "Old password is incorrect." });
-    }
-
-    // ✅ เข้ารหัสรหัสผ่านใหม่
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    userData.password = hashedPassword;
+    userData.user.password = hashedPassword;
     await userData.save();
 
-    // ✅ ส่งอีเมลแจ้งเตือนการเปลี่ยนรหัสผ่าน
-    await sendResetPasswordEmail(userData.email, "Password Changed Successfully", "Your password has been changed successfully.");
+    await sendPasswordChangeEmail(userData.user.email, userData.user.name);
 
-    return res.status(200).send({ status: "success", message: "Password has been successfully updated." });
+    return res.status(200).json({ status: "success", message: "Password has been successfully updated." });
 
   } catch (err) {
-    console.error("❌ Error updating password:", err.message);
-    return res.status(500).send({ status: "error", message: "An error occurred while updating the password." });
+    console.error("❌ ERROR in changePassword:", err);
+    return res.status(500).json({ status: "error", message: err.message || "An error occurred while updating the password." });
   }
 };
 

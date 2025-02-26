@@ -15,7 +15,7 @@ const UserSchema = new mongoose.Schema(
         match: /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/,
       },
       phone: { type: String, trim: true },
-      password: { type: String, required: true },
+      password: { type: String, required: true, select: false},
       token: { type: String },
       activated: { type: Boolean, default: false },
       verified: {

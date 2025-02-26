@@ -79,5 +79,4 @@ const sendNextWinnerEmail = async (email, auctionName, newPrice) => {
   }
 };
 
-
 module.exports = sendWinnerEmail,sendNextWinnerEmail ;

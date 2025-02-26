@@ -53,4 +53,9 @@ router.post("/force-expire-payment/:id", async (req, res) => {
   }
 });
 
+const multer = require("multer");
+const upload = multer({ dest: "uploads/" });
+
+router.post("/auction", upload.single("image"));
+
 module.exports = router;

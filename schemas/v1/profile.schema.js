@@ -5,14 +5,17 @@ const profileSchema = new mongoose.Schema({
   name: { type: String, required: true },
   phone: { type: String },
   address: { type: String },
-  profileImage: { type: String, default: "/images/default-profile.jpg" }, // ✅ เพิ่มเก็บรูป
+  profileImage: {
+    data: Buffer,  // 🔹 เก็บไฟล์ภาพเป็น Binary (Base64)
+    contentType: String // 🔹 เก็บประเภทของไฟล์ (image/png, image/jpeg)
+  },
   loginHistory: [
     {
       ipAddress: { type: String },
       userAgent: { type: String },
       timestamp: { type: Date, default: Date.now }
     }
-  ] // 📌 เพิ่มประวัติการ Login
+  ]
 }, { timestamps: true });
 
 module.exports = mongoose.model("Profile", profileSchema);

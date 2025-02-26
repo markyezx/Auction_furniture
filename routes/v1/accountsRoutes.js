@@ -26,7 +26,7 @@ const { verifyAccessToken, verifyRefreshToken } = require('../../middlewares/aut
 const { checkLogin } = require("../../middlewares/authMiddleware");
 
 //? Change Password
-router.patch("/password/change/:user", changePassword);
+router.patch("/password/change", verifyAccessToken, changePassword);
 
 //? Forgot Password (✅ เพิ่ม Endpoint)
 router.post("/forgot-password", forgotPassword);

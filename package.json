@@ -9,6 +9,9 @@
     "docker:build": "docker build -t healworld-pos-backend ."
   },
   "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^6.7.2",
+    "@fortawesome/free-solid-svg-icons": "^6.7.2",
+    "@fortawesome/react-fontawesome": "^0.2.2",
     "@hapi/joi": "^17.1.1",
     "ali-oss": "^6.18.0",
     "apicache": "^1.6.3",
