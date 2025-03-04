@@ -462,4 +462,73 @@ exports.getCategories = async (req, res) => {
   }
 };
 
+const getUserIdFromRequest = (req) => {
+  try {
+    if (req.user && req.user.userId) {
+      return req.user.userId;
+    }
+    if (req.cookies && req.cookies.accesstoken) {
+      const decoded = jwt.verify(req.cookies.accesstoken, process.env.JWT_SECRET);
+      return decoded.userId;
+    }
+    return null;
+  } catch (err) {
+    console.error("❌ Error decoding access token:", err);
+    return null;
+  }
+};
+
+exports.getMyAuctionHistory = async (req, res) => {
+  try {
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).send({ status: "error", message: "Unauthorized or invalid token" });
+    }
+
+    const myAuctions = await Auction.find({ owner: userId }).sort({ createdAt: -1 });
+    res.status(200).send({ status: "success", data: myAuctions });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
+exports.getMyBidHistory = async (req, res) => {
+  try {
+    console.log("📌 Checking My Bid History...");
+
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      return res.status(401).send({ status: "error", message: "Unauthorized or invalid token" });
+    }
+
+    const myBids = await Bid.find({ user: userId })
+      .populate("auction", "name currentPrice")
+      .sort({ createdAt: -1 });
+
+    console.log("✅ Found Bids:", myBids.length);
+    res.status(200).send({ status: "success", data: myBids });
+  } catch (err) {
+    console.error("❌ Error fetching bid history:", err);
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
+
+// ✅ เพิ่มเส้นทาง API ใหม่ลงใน router
+exports.getAuctionHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).send({ status: "error", message: "Invalid auction ID" });
+    }
+
+    const auction = await Auction.findById(id).select("history").populate("history.user", "name email");
+    if (!auction) {
+      return res.status(404).send({ status: "error", message: "Auction not found" });
+    }
+
+    res.status(200).send({ status: "success", data: auction.history });
+  } catch (err) { 
+    res.status(500).send({ status: "error", message: err.message });
+  }
+};
 

@@ -3,7 +3,7 @@ const multer = require("multer");
 const { 
   createAuction, getAuctions, getAuctionById, placeBid, endAuctions, 
   getAuctionHistory, getBidHistory, forceEndAuctions, forceEndAuctionById, 
-  getHighestBidder, forceExpirePayment, getCategories
+  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory
 } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 const Auction = require("../../schemas/v1/auction.schema");
@@ -12,6 +12,10 @@ const router = express.Router();
 
 // ✅ กำหนดค่า `multer` ก่อนใช้งาน
 const upload = multer({ storage: multer.memoryStorage() });
+
+router.use(checkLogin);
+router.get("/my-auctions", checkLogin, getMyAuctionHistory);
+router.get("/my-bids", checkLogin ,getMyBidHistory);
 
 // ✅ ดึงรายการประมูลทั้งหมด
 router.get("/", getAuctions);
