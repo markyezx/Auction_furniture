@@ -13,10 +13,8 @@ const router = express.Router();
 // ✅ กำหนดค่า `multer` ก่อนใช้งาน
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.use(checkLogin);
 router.get("/my-auctions", checkLogin, getMyAuctionHistory);
 router.get("/my-bids", checkLogin ,getMyBidHistory);
-
 // ✅ ดึงรายการประมูลทั้งหมด
 router.get("/", getAuctions);
 router.get("/categories", getCategories);
