@@ -6,14 +6,21 @@ const profileSchema = new mongoose.Schema({
   phone: { type: String },
   address: { type: String },
   profileImage: {
-    data: Buffer,  // 🔹 เก็บไฟล์ภาพเป็น Binary (Base64)
-    contentType: String // 🔹 เก็บประเภทของไฟล์ (image/png, image/jpeg)
+    data: Buffer, 
+    contentType: String
   },
   loginHistory: [
     {
       ipAddress: { type: String },
       userAgent: { type: String },
       timestamp: { type: Date, default: Date.now }
+    }
+  ],
+  winningBids: [
+    {
+      auction: { type: mongoose.Schema.Types.ObjectId, ref: "Auction" }, // ✅ เชื่อม Auction
+      finalPrice: { type: Number }, 
+      wonAt: { type: Date, default: Date.now } // ✅ บันทึกเวลาชนะ
     }
   ]
 }, { timestamps: true });

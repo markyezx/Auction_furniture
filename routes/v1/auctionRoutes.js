@@ -3,18 +3,20 @@ const multer = require("multer");
 const { 
   createAuction, getAuctions, getAuctionById, placeBid, endAuctions, 
   getAuctionHistory, getBidHistory, forceEndAuctions, forceEndAuctionById, 
-  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory
+  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, getAllAuctions
 } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 const Auction = require("../../schemas/v1/auction.schema");
 
 const router = express.Router();
 
-// ✅ กำหนดค่า `multer` ก่อนใช้งาน
-const upload = multer({ storage: multer.memoryStorage() });
+
 
 router.get("/my-auctions", checkLogin, getMyAuctionHistory);
 router.get("/my-bids", checkLogin ,getMyBidHistory);
+router.get("/my-winning-bids", checkLogin, getMyWinningBids);
+
+router.get("/all", getAllAuctions);
 // ✅ ดึงรายการประมูลทั้งหมด
 router.get("/", getAuctions);
 router.get("/categories", getCategories);
@@ -25,9 +27,8 @@ router.get("/:id/highest-bidder", getHighestBidder);
 
 // ✅ ใช้ `checkLogin` เพื่อป้องกัน API ที่ต้องมีการล็อกอิน
 router.use(checkLogin);
-
 // ✅ สร้างการประมูลใหม่ (รองรับการอัปโหลด 5 รูป)
-router.post("/", upload.array("images", 5), createAuction);
+router.post("/", createAuction);
 
 // ✅ ทำการบิด
 router.post("/:id/bids", placeBid);

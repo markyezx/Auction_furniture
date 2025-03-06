@@ -2,12 +2,8 @@ const mongoose = require("mongoose");
 
 const auctionSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  images: [
-    {
-      data: { type: String, required: true }, // ✅ เก็บรูปเป็น Base64
-      contentType: { type: String, required: true }, // ✅ เก็บประเภทไฟล์ (MIME Type)
-    },
-  ],
+  description: { type: String, required: true }, // ✅ เพิ่มฟิลด์รายละเอียดสินค้า
+  image: { type: String, required: true },
   startingPrice: { type: Number, required: true },
   currentPrice: { type: Number, required: true },
   minimumBidIncrement: { type: Number, required: true, default: 10 },
