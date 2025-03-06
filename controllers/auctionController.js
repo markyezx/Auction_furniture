@@ -255,6 +255,38 @@ exports.placeBid = async (req, res) => {
 
     const bid = new Bid({ auction: auction._id, user: req.user.userId, amount });
 
+    // ✅ แจ้งเตือนผู้ใช้ที่ถูกแซงในการประมูล
+    if (auction.highestBidder && auction.highestBidder.toString() !== userId) {
+      const existingNotification = await Notification.findOne({
+        user: auction.highestBidder,
+        message: { $regex: new RegExp(`มีผู้ประมูลสูงกว่าคุณใน "${auction.name}"`), $options: "i" },
+        type: "outbid_warning"
+      });
+  
+      if (!existingNotification) {
+        await Notification.create({
+          user: auction.highestBidder,
+          message: `⚠️ มีผู้ประมูลสูงกว่าคุณใน "${auction.name}"`,
+          type: "outbid_warning"
+        });
+      }
+    }
+
+    // ✅ แจ้งเตือนให้กับผู้ที่บิดใหม่ (ถ้ายังไม่เคยได้รับ)
+    const bidSuccessNotification = await Notification.findOne({
+      user: userId,
+      message: { $regex: new RegExp(`บิดประมูล "${auction.name}"`), $options: "i" },
+      type: "bid_success"
+    });
+
+    if (!bidSuccessNotification) {
+      await Notification.create({
+        user: userId,
+        message: `🎯 คุณได้ทำการบิดประมูล "${auction.name}" สำเร็จแล้ว!`,
+        type: "bid_success"
+      });
+    }
+
     auction.currentPrice = amount;
     auction.highestBidder = req.user.userId;
     auction.highestBidderEmail = bidderEmail; // ✅ บันทึกอีเมลจากคุกกี้
@@ -263,12 +295,12 @@ exports.placeBid = async (req, res) => {
     await auction.save();
     await bid.save();
 
-     // ✅ สร้างแจ้งเตือนการบิดสำเร็จ
-     await Notification.create({
-      user: userId,
-      message: `🎯 คุณได้ทำการบิดประมูล "${auction.name}" สำเร็จแล้ว!`,
-      type: "bid_success"
-    });
+    // ✅ สร้างแจ้งเตือนการบิดสำเร็จ
+    //  await Notification.create({
+    //   user: userId,
+    //   message: `🎯 คุณได้ทำการบิดประมูล "${auction.name}" สำเร็จแล้ว!`,
+    //   type: "bid_success"
+    // });
 
     console.log("✅ อัปเดต highestBidderEmail สำเร็จ:", bidderEmail);
 
