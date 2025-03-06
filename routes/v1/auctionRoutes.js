@@ -3,14 +3,16 @@ const multer = require("multer");
 const { 
   createAuction, getAuctions, getAuctionById, placeBid, endAuctions, 
   getAuctionHistory, getBidHistory, forceEndAuctions, forceEndAuctionById, 
-  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, getAllAuctions
+  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, getAllAuctions, getNotifications, markAllNotificationsAsRead
 } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 const Auction = require("../../schemas/v1/auction.schema");
 
 const router = express.Router();
 
-
+// ✅ API แจ้งเตือน
+router.get("/notifications", checkLogin, getNotifications);
+router.post("/notifications/read-all", checkLogin, markAllNotificationsAsRead);
 
 router.get("/my-auctions", checkLogin, getMyAuctionHistory);
 router.get("/my-bids", checkLogin ,getMyBidHistory);

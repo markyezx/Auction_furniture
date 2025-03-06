@@ -3,6 +3,7 @@ const Auction = require("../schemas/v1/auction.schema");
 const Bid = require("../schemas/v1/bid.schema");
 const User = require("../schemas/v1/user.schema"); // ✅ เปลี่ยน path ตามที่ถูกต้อง
 const Profile = require("../schemas/v1/profile.schema");
+const Notification = require("../schemas/v1/notification.schema");
 const sendWinnerEmail = require("../modules/email/emailService");
 const sendNextWinnerEmail = require("../modules/email/emailService");
 const { isValidObjectId } = require("mongoose");
@@ -226,6 +227,7 @@ exports.placeBid = async (req, res) => {
 
     const { amount } = req.body;
     const { id } = req.params;
+    const userId = req.user?.userId;
 
     const auction = await Auction.findById(id);
     if (!auction) return res.status(404).send({ status: "error", message: "Auction not found" });
@@ -260,6 +262,13 @@ exports.placeBid = async (req, res) => {
 
     await auction.save();
     await bid.save();
+
+     // ✅ สร้างแจ้งเตือนการบิดสำเร็จ
+     await Notification.create({
+      user: userId,
+      message: `🎯 คุณได้ทำการบิดประมูล "${auction.name}" สำเร็จแล้ว!`,
+      type: "bid_success"
+    });
 
     console.log("✅ อัปเดต highestBidderEmail สำเร็จ:", bidderEmail);
 
@@ -325,7 +334,6 @@ exports.getBidHistory = async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 };
-
 
 exports.getHighestBidder = async (req, res) => {
   try {
@@ -672,5 +680,99 @@ exports.getAllAuctions = async (req, res) => {
     res.status(200).json({ status: "success", data: updatedAuctions });
   } catch (err) {
     res.status(500).json({ status: "error", message: err.message });
+  }
+};
+
+// ✅ ดึงรายการแจ้งเตือนทั้งหมดของผู้ใช้
+exports.getNotifications = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(400).json({ status: "error", message: "Unauthorized: User ID not found" });
+
+    const notifications = await Notification.find({ user: userId }).sort({ timestamp: -1 });
+
+    res.status(200).json({ status: "success", data: notifications });
+  } catch (err) {
+    console.error("❌ Error fetching notifications:", err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+};
+
+// ✅ ตั้งค่าแจ้งเตือนทั้งหมดเป็น "อ่านแล้ว"
+exports.markAllNotificationsAsRead = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ status: "error", message: "Unauthorized" });
+
+    await Notification.updateMany({ user: userId, read: false }, { $set: { read: true } });
+
+    res.status(200).json({ status: "success", message: "All notifications marked as read" });
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message });
+  }
+};
+
+exports.handleAuctionNotifications = async () => {
+  try {
+    console.log("🔔 กำลังตรวจสอบแจ้งเตือนการประมูล...");
+
+    const now = new Date();
+    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+
+    // 🔍 หา Auction ที่เหลือ 5 นาที
+    const soonToEndAuctions = await Auction.find({
+      expiresAt: { $gte: now, $lte: fiveMinutesLater },
+      status: "active"
+    }).populate("highestBidder", "name");
+
+    for (const auction of soonToEndAuctions) {
+      if (auction.highestBidder) {
+        // ✅ เช็คว่าแจ้งเตือนนี้เคยถูกสร้างไปแล้วหรือไม่
+        const existingNotification = await Notification.findOne({
+          user: auction.highestBidder._id,
+          message: `🔥 การประมูล "${auction.name}" กำลังจะจบใน 5 นาที!`,
+          type: "time_warning"
+        });
+
+        if (!existingNotification) {
+          console.log(`⏳ แจ้งเตือน: การประมูล "${auction.name}" เหลือ 5 นาที!`);
+
+          await Notification.create({
+            user: auction.highestBidder._id,
+            message: `🔥 การประมูล "${auction.name}" กำลังจะจบใน 5 นาที!`,
+            type: "time_warning"
+          });
+        }
+      }
+    }
+
+    // 🔍 หา Auction ที่จบแล้ว
+    const expiredAuctions = await Auction.find({ expiresAt: { $lte: now }, status: "ended" })
+      .populate("highestBidder", "name");
+
+    for (const auction of expiredAuctions) {
+      if (auction.highestBidder) {
+        // ✅ เช็คว่าแจ้งเตือนนี้เคยถูกสร้างไปแล้วหรือไม่
+        const existingNotification = await Notification.findOne({
+          user: auction.highestBidder._id,
+          message: `🎉 คุณชนะการประมูล "${auction.name}"`,
+          type: "auction_end"
+        });
+
+        if (!existingNotification) {
+          console.log(`🎉 แจ้งเตือน: การประมูล "${auction.name}" จบลงแล้ว!`);
+
+          await Notification.create({
+            user: auction.highestBidder._id,
+            message: `🎉 คุณชนะการประมูล "${auction.name}"`,
+            type: "auction_end"
+          });
+        }
+      }
+    }
+
+    console.log("✅ ตรวจสอบแจ้งเตือนเสร็จสิ้น!");
+  } catch (err) {
+    console.error("❌ Error in handleAuctionNotifications:", err);
   }
 };
