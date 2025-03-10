@@ -38,50 +38,45 @@ exports.uploadSlip = async (req, res) => {
   }
 };
 
-// ฟังก์ชันสร้าง QR Code พร้อมเพย์
-exports.generatePromptPayQR = async (req, res) => {
+// 📌 ฟังก์ชันสร้าง QR Code พร้อมเพย์สำหรับการจ่ายเงิน
+exports.generatePaymentQR = async (req, res) => {
   try {
-    console.log("Request Body:", req.body);
-    const { recipient, amount } = req.body;
+    const { auctionId } = req.body;
 
-    // ตรวจสอบเบอร์โทรหรือเลขบัตรประชาชน
-    if (!recipient || (!/^\d{10}$/.test(recipient) && !/^\d{13}$/.test(recipient))) {
-      return res.status(400).json({ error: "หมายเลขพร้อมเพย์ต้องมี 10 หลัก (เบอร์โทรศัพท์) หรือ 13 หลัก (บัตรประชาชน)" });
+    // ดึงข้อมูลการประมูล
+    const auction = await Auction.findById(auctionId).populate("owner", "phone email");
+    if (!auction) {
+      return res.status(404).json({ error: "ไม่พบข้อมูลการประมูล" });
     }
 
-    // ตรวจสอบจำนวนเงิน
-    if (!amount || isNaN(amount) || amount <= 0) {
-      return res.status(400).json({ error: "จำนวนเงินต้องเป็นตัวเลขและมากกว่า 0" });
+    // ดึงหมายเลขพร้อมเพย์ของผู้ขาย
+    const sellerPhone = auction.owner.phone;
+    if (!sellerPhone) {
+      return res.status(400).json({ error: "ผู้ขายไม่มีหมายเลขพร้อมเพย์" });
     }
 
     // สร้าง QR Code
-    const payload = generatePayload(recipient, { amount: parseFloat(amount) });
+    const payload = generatePayload(sellerPhone, { amount: auction.currentPrice });
     const qrCode = await qrcode.toDataURL(payload);
-    const expiresAt = new Date(Date.now() + 3 * 60 * 1000); // หมดอายุใน 3 นาที
 
-    // บันทึกลง MongoDB
-    const qrCodeData = new QRCodeModel({
-      recipient,
-      amount: parseFloat(amount),
-      payload,
+    // บันทึก QR Code ลงฐานข้อมูล
+    const payment = new Payment({
+      userId: auction.highestBidder,
+      auctionId,
+      amount: auction.currentPrice,
       qrCode,
-      expiresAt,
-      isPaid: false,
-      slipImage: null, // เพิ่มคอลัมน์สำหรับอัปโหลดสลิป
+      status: "pending",
     });
+    await payment.save();
 
-    await qrCodeData.save();
+    // อัปเดตการประมูลให้เก็บ QR Code
+    auction.paymentQR = qrCode;
+    await auction.save();
 
-    res.status(200).json({
-      success: true,
-      message: "สร้าง QR Code สำเร็จ",
-      qrCode,
-      payload,
-      expiresAt,
-    });
+    res.status(200).json({ success: true, qrCode, auctionId });
   } catch (error) {
-    console.error("Error generating QR Code:", error);
-    res.status(500).json({ error: "เกิดข้อผิดพลาดภายในระบบ" });
+    console.error("❌ Error generating QR Code:", error);
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
   }
 };
 
@@ -278,6 +273,67 @@ exports.updateQRForAuction = async (req, res) => {
   }
 };
 
+// 📌 ฟังก์ชันอัปโหลดสลิปและตรวจสอบการชำระเงิน
+exports.uploadPaymentSlip = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const slipImage = req.file ? req.file.path : null;
+
+    if (!slipImage) {
+      return res.status(400).json({ error: "กรุณาอัปโหลดรูปภาพสลิป" });
+    }
+
+    // ค้นหาการชำระเงิน
+    const payment = await Payment.findById(paymentId).populate("auctionId");
+    if (!payment) {
+      return res.status(404).json({ error: "ไม่พบข้อมูลการชำระเงิน" });
+    }
+
+    // อัปเดตสถานะเป็น "completed"
+    payment.status = "completed";
+    payment.slipImage = slipImage;
+    await payment.save();
+
+    // แจ้งเตือนผู้ขาย
+    await Notification.create({
+      user: payment.auctionId.owner,
+      message: `✅ ผู้ชนะการประมูล "${payment.auctionId.name}" ได้ชำระเงินแล้ว`,
+      type: "payment_received",
+    });
+
+    res.status(200).json({ success: true, message: "อัปโหลดสลิปสำเร็จ" });
+  } catch (error) {
+    console.error("❌ Error uploading slip:", error);
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
+  }
+};
+
+// 📌 ฟังก์ชันอัปเดตที่อยู่จัดส่ง
+exports.updateShippingAddress = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const { address } = req.body;
+
+    if (!address) {
+      return res.status(400).json({ error: "กรุณากรอกที่อยู่จัดส่ง" });
+    }
+
+    // ค้นหาการชำระเงิน
+    const payment = await Payment.findById(paymentId);
+    if (!payment || payment.status !== "completed") {
+      return res.status(400).json({ error: "ยังไม่สามารถเพิ่มที่อยู่จัดส่งได้" });
+    }
+
+    // บันทึกที่อยู่ลงในฐานข้อมูล
+    payment.shippingAddress = address;
+    await payment.save();
+
+    res.status(200).json({ success: true, message: "บันทึกที่อยู่จัดส่งสำเร็จ" });
+  } catch (error) {
+    console.error("❌ Error updating shipping address:", error);
+    res.status(500).json({ error: "เกิดข้อผิดพลาดในระบบ" });
+  }
+};
 
 // 📌 รันตรวจสอบทุกๆ 5 นาที
 setInterval(checkPaymentsAutomatically, 5 * 60 * 1000);

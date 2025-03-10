@@ -247,6 +247,13 @@ exports.createAuction = async (req, res) => {
       return res.status(404).send({ status: "error", message: "ไม่พบข้อมูลโปรไฟล์ผู้ขาย" });
     }
 
+    const validCategories = [
+      "designer_toys", "vinyl_figures", "resin_figures", "blind_box",
+      "anime_figures", "movie_game_collectibles", "robot_mecha",
+      "soft_vinyl", "kaiju_monsters", "diy_custom", "retro_vintage",
+      "limited_edition", "gunpla_models", "plastic_models"
+    ];
+
     console.log("📌 Profile Data:", profile);
     console.log("📌 User Data:", profile.user);
 

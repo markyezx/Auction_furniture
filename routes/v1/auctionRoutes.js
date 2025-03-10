@@ -6,6 +6,7 @@ const {
 } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 const Auction = require("../../schemas/v1/auction.schema");
+const { generatePaymentQR, uploadPaymentSlip, updateShippingAddress } = require("../../controllers/paymentController");
 
 const fs = require("fs");
 const path = require("path");
@@ -134,5 +135,10 @@ router.get("/my-auctions/closed", async (req, res) => {
 
 // 📌 API สำหรับอัปเดต QR Code และ Payment ID
 router.post("/:id/update-qr", updateAuctionQR);
+
+router.post("/:id/generate-payment-qr", checkLogin, generatePaymentQR);
+router.post("/:id/upload-slip", checkLogin, upload.single("slip"), uploadPaymentSlip);
+router.post("/:id/update-shipping-address", checkLogin, updateShippingAddress);
+
 
 module.exports = router;
