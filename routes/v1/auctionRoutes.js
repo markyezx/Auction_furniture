@@ -1,18 +1,59 @@
 const express = require("express");
-const multer = require("multer");
 const { 
   createAuction, getAuctions, getAuctionById, placeBid, endAuctions, 
   getAuctionHistory, getBidHistory, forceEndAuctions, forceEndAuctionById, 
-  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, getAllAuctions, getNotifications, markAllNotificationsAsRead
+  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, getAllAuctions, getNotifications, markAllNotificationsAsRead, getClosedAuctions, updateAuctionQR
 } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 const Auction = require("../../schemas/v1/auction.schema");
 
+const fs = require("fs");
+const path = require("path");
+
 const router = express.Router();
+
+const multer = require("multer");
+
+const uploadDir = path.join(__dirname, "../../uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true }); // สร้างโฟลเดอร์ uploads หากไม่มีอยู่
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    console.log("❌ ไฟล์ไม่ใช่รูปภาพ:", file.mimetype);
+    cb(new Error("Only image files are allowed!"), false);
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // จำกัดขนาดไฟล์ 5MB
+});
+
+// อัปเดต Route ให้รองรับการอัปโหลดไฟล์
+router.post("/", upload.array("image", 5), checkLogin, createAuction);
+// ✅ สร้างการประมูลใหม่ (รองรับการอัปโหลด 5 รูป)
+router.post("/", checkLogin, createAuction);
+
 
 // ✅ API แจ้งเตือน
 router.get("/notifications", checkLogin, getNotifications);
 router.post("/notifications/read-all", checkLogin, markAllNotificationsAsRead);
+
+router.get("/closed-auctions", getClosedAuctions);
 
 router.get("/my-auctions", checkLogin, getMyAuctionHistory);
 router.get("/my-bids", checkLogin ,getMyBidHistory);
@@ -29,8 +70,6 @@ router.get("/:id/highest-bidder", getHighestBidder);
 
 // ✅ ใช้ `checkLogin` เพื่อป้องกัน API ที่ต้องมีการล็อกอิน
 router.use(checkLogin);
-// ✅ สร้างการประมูลใหม่ (รองรับการอัปโหลด 5 รูป)
-router.post("/", createAuction);
 
 // ✅ ทำการบิด
 router.post("/:id/bids", placeBid);
@@ -92,5 +131,8 @@ router.get("/my-auctions/closed", async (req, res) => {
     res.status(500).send({ status: "error", message: err.message });
   }
 });
+
+// 📌 API สำหรับอัปเดต QR Code และ Payment ID
+router.post("/:id/update-qr", updateAuctionQR);
 
 module.exports = router;

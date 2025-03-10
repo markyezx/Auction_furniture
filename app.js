@@ -149,12 +149,15 @@ const { checkAndEndAuctions } = require("./controllers/auctionController");
 setInterval(checkAndEndAuctions, 10000);
 setInterval(handleAuctionNotifications, 10000);
 
+// ให้ Express ให้บริการไฟล์รูปจากโฟลเดอร์ 'uploads'
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 
 app.use(express.json()); // ✅ รองรับ JSON body
 app.use(express.urlencoded({ extended: true })); // ✅ รองรับ Form Data
 
 const v1PaymentRoutes = require("./routes/v1/paymentRoutes");
-app.use("/api/v1/payments", v1PaymentRoutes);
+app.use("/api/v1/payment", v1PaymentRoutes);
 
 //? Profile Endpoints
 const v1ProfileRouter = require("./routes/v1/profileRoutes");

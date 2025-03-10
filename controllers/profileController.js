@@ -3,47 +3,39 @@ const User = require("../schemas/v1/user.schema");
 const { isValidObjectId } = require("mongoose");
 const { uploadImage } = require("../controllers/fileUploadControllers");
 const multer = require('multer') // ✅ ต้องเพิ่ม multer ที่นี่
+// 📌 ฟังก์ชันแปลง Binary เป็น Base64 URL
+const getBase64Image = (profileImage) => {
+  if (!profileImage || !profileImage.data) return null;
+  return `data:${profileImage.contentType};base64,${profileImage.data.toString("base64")}`;
+};
 
-// 📌 ดึงข้อมูลโปรไฟล์
+// 📌 ดึงข้อมูลโปรไฟล์ พร้อม `email` และ `phone` จาก `User`
 exports.getProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    // 🔹 ดึงข้อมูลจาก Profile และ User
-    let profile = await Profile.findOne({ user: userId });
-    const user = await User.findById(userId);
+    // ✅ `populate("user")` เพื่อดึง `email` และ `phone`
+    const profile = await Profile.findOne({ user: userId }).populate("user");
 
     if (!profile) {
-      if (!user) {
-        return res.status(404).json({ error: "ไม่พบข้อมูลผู้ใช้" });
-      }
-
-      profile = new Profile({
-        user: userId,
-        name: user.user.name || "New User",
-        phone: user.user.phone || "",
-        address: "",
-        profileImage: "",
-        loginHistory: [] // ✅ ให้มี loginHistory เป็น array ว่าง
-      });
-
-      await profile.save();
+      return res.status(404).json({ status: "error", message: "ไม่พบข้อมูลโปรไฟล์" });
     }
 
-    res.status(200).json({ 
+    console.log("📌 Debug User Data:", profile.user);
+
+    res.status(200).json({
       status: "success",
       data: {
-        profile: {
-          ...profile.toObject(),
-          name: user?.user.name || profile.name, 
-          phone: user?.user.phone || profile.phone,
-          loginHistory: profile?.loginHistory || [] // ✅ ส่ง loginHistory กลับไป
-        },
-        email: user?.user.email || "",
-        loggedInDevices: user?.loggedInDevices || [] // ✅ ส่งข้อมูลอุปกรณ์ที่เคย login
+        name: profile.name,
+        email: profile.user?.user?.email || "ไม่มีอีเมล",  // ✅ ดึง `email` จาก `user.user.email`
+        phone: profile.user?.user?.phone || "ไม่มีเบอร์โทร",  // ✅ ดึง `phone` จาก `user.user.phone`
+        address: profile.address || "ไม่ระบุ",
+        profileImage: getBase64Image(profile.profileImage),
+        createdAt: profile.createdAt
       }
     });
   } catch (err) {
+    console.error("❌ Error in getProfile:", err);
     res.status(500).json({ status: "error", message: err.message });
   }
 };

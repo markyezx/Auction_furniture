@@ -25,4 +25,13 @@ const profileSchema = new mongoose.Schema({
   ]
 }, { timestamps: true });
 
+// ✅ ใช้ Virtual Field เพื่อดึง `email` และ `phone` จาก `User`
+profileSchema.virtual("email").get(function() {
+  return this.user ? this.user.email : "ไม่มีอีเมล";
+});
+
+
+profileSchema.set("toObject", { virtuals: true });
+profileSchema.set("toJSON", { virtuals: true });
+
 module.exports = mongoose.model("Profile", profileSchema);
