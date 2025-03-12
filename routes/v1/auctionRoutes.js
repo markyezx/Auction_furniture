@@ -2,7 +2,8 @@ const express = require("express");
 const { 
   createAuction, getAuctions, getAuctionById, placeBid, endAuctions, 
   getAuctionHistory, getBidHistory, forceEndAuctions, forceEndAuctionById, 
-  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, getAllAuctions, getNotifications, markAllNotificationsAsRead, getClosedAuctions, updateAuctionQR
+  getHighestBidder, forceExpirePayment, getCategories,getMyAuctionHistory, getMyBidHistory, getMyWinningBids, 
+  getAllAuctions, getNotifications, markAllNotificationsAsRead, getClosedAuctions, updateAuctionQR, searchAuctions
 } = require("../../controllers/auctionController");
 const { checkLogin } = require("../../middlewares/authMiddleware");
 const Auction = require("../../schemas/v1/auction.schema");
@@ -43,12 +44,11 @@ const upload = multer({
   fileFilter: fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 }, // จำกัดขนาดไฟล์ 5MB
 });
-
+router.get("/search", searchAuctions);
 // อัปเดต Route ให้รองรับการอัปโหลดไฟล์
 router.post("/", upload.array("image", 5), checkLogin, createAuction);
 // ✅ สร้างการประมูลใหม่ (รองรับการอัปโหลด 5 รูป)
 router.post("/", checkLogin, createAuction);
-
 
 // ✅ API แจ้งเตือน
 router.get("/notifications", checkLogin, getNotifications);

@@ -295,7 +295,7 @@ exports.createAuction = async (req, res) => {
       startingPrice,
       currentPrice: startingPrice,
       minimumBidIncrement,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() +  60 * 1000),
       owner: userId,
       category,
       seller: sellerInfo // ✅ เพิ่มข้อมูลผู้ขาย
@@ -1204,3 +1204,35 @@ exports.updateAuctionQR = async (req, res) => {
     res.status(500).json({ status: "error", message: "❌ ไม่สามารถอัปเดต QR Code ได้" });
   }
 };
+
+// 📌 เพิ่มฟังก์ชันค้นหาสินค้า
+exports.searchAuctions = async (req, res) => {
+  try {
+    const { name, category } = req.query;
+    let query = {};
+
+    if (name || category) {
+      query.$or = [];
+      if (name) {
+        query.$or.push({ name: { $regex: new RegExp(name, "i") } });
+      }
+      if (category) {
+        query.$or.push({ category: { $regex: new RegExp(category, "i") } });
+      }
+    }
+
+    console.log("🔍 ค้นหาด้วยเงื่อนไข:", query); // ✅ Debugging
+
+    const auctions = await Auction.find(query).populate("owner", "name");
+
+    if (!auctions.length) {
+      return res.status(200).json({ status: "success", data: [], message: "❌ ไม่พบสินค้า" });
+    }
+
+    res.status(200).json({ status: "success", data: auctions });
+  } catch (err) {
+    console.error("❌ Error in search:", err);
+    res.status(500).json({ status: "error", message: "เกิดข้อผิดพลาดในการค้นหา" });
+  }
+};
+
