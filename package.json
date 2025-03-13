@@ -31,6 +31,7 @@
     "geoip-lite": "^1.4.10",
     "google-auth-library": "^9.2.0",
     "http-errors": "^2.0.0",
+    "i": "^0.3.7",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.1",
     "mongoose": "^8.0.0",
