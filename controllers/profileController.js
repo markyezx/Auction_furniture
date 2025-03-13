@@ -3,6 +3,9 @@ const User = require("../schemas/v1/user.schema");
 const { isValidObjectId } = require("mongoose");
 const { uploadImage } = require("../controllers/fileUploadControllers");
 const multer = require('multer') // ✅ ต้องเพิ่ม multer ที่นี่
+
+const uaParser = require('ua-parser-js');
+const geoip = require('geoip-lite');
 // 📌 ฟังก์ชันแปลง Binary เป็น Base64 URL
 const getBase64Image = (profileImage) => {
   if (!profileImage || !profileImage.data) return null;
@@ -119,18 +122,64 @@ exports.uploadProfileImage = async (req, res) => {
   }
 };
 
-// 📌 เพิ่มฟังก์ชัน getLoginHistory
-exports.getLoginHistory = async (req, res) => {
+// 📌 ฟังก์ชันบันทึกการเข้าสู่ระบบ
+exports.recordLoginHistory = async (req, userId) => {
   try {
-    const userId = req.user.userId;
     const profile = await Profile.findOne({ user: userId });
 
     if (!profile) {
-      return res.status(404).send({ status: "error", message: "Profile not found" });
+      return;
     }
 
-    res.status(200).send({ status: "success", data: profile.loginHistory });
+    // 📌 ดึงข้อมูลอุปกรณ์, OS, Browser และที่ตั้ง
+    const userAgent = uaParser(req.headers["user-agent"]);
+    const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+    const geo = geoip.lookup(ip) || {};
+
+    // 📌 สร้างข้อมูลการเข้าสู่ระบบ
+    const loginEntry = {
+      ipAddress: ip,
+      userAgent: req.headers["user-agent"],
+      device: `${userAgent.device.vendor || "Unknown"} ${userAgent.device.model || ""}`,
+      os: `${userAgent.os.name} ${userAgent.os.version}`,
+      browser: `${userAgent.browser.name} ${userAgent.browser.version}`,
+      location: `${geo.city || "Unknown"}, ${geo.country || "Unknown"}`,
+      timestamp: new Date(),
+    };
+
+    // 📌 จำกัดประวัติให้เก็บ 10 รายการ
+    profile.loginHistory.unshift(loginEntry);
+    if (profile.loginHistory.length > 10) {
+      profile.loginHistory.pop();
+    }
+
+    await profile.save();
   } catch (err) {
-    res.status(500).send({ status: "error", message: err.message });
+    console.error("Error recording login history:", err);
+  }
+};
+
+// 📌 ดึงข้อมูลประวัติการเข้าสู่ระบบ
+exports.getLoginHistory = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ status: "error", message: "Unauthorized: กรุณาเข้าสู่ระบบ" });
+    }
+
+    const profile = await Profile.findOne({ user: userId });
+
+    if (!profile) {
+      return res.status(404).json({ status: "error", message: "ไม่พบโปรไฟล์ของผู้ใช้" });
+    }
+
+    return res.status(200).json({ 
+      status: "success", 
+      data: { loginHistory: profile.loginHistory || [] } 
+    });
+
+  } catch (err) {
+    console.error("🚨 getLoginHistory Error:", err);
+    res.status(500).json({ status: "error", message: "เกิดข้อผิดพลาดในการดึงข้อมูล" });
   }
 };

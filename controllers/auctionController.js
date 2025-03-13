@@ -556,6 +556,113 @@ exports.getAuctionHistory = async (req, res) => {
 //   }
 // };
 
+// exports.placeBid = async (req, res) => {
+//   try {
+//     console.log("📌 คุกกี้ทั้งหมดที่ได้รับ:", req.cookies);
+
+//     const { amount } = req.body;
+//     const { id } = req.params;
+//     const userId = req.user?.userId;
+
+//     const auction = await Auction.findById(id);
+//     if (!auction) return res.status(404).send({ status: "error", message: "Auction not found" });
+
+//     if (amount < auction.currentPrice + auction.minimumBidIncrement) {
+//       return res.status(400).send({ status: "error", message: "Bid too low" });
+//     }
+
+//     // ✅ ดึงข้อมูลผู้ใช้ทุกครั้งที่มีการบิด
+//     const user = await User.findById(userId, "name email");
+//     if (!user) {
+//       return res.status(404).json({ status: "error", message: "User not found" });
+//     }
+
+//     let userProfile = await Profile.findOne({ user: userId }, "name");
+
+//     // ✅ ตรวจสอบและกำหนดค่าของ `userName`
+//     const userName = userProfile?.name || user?.name;
+//     if (!userName) {
+//       console.error("❌ Error: User name not found");
+//       return res.status(404).json({ status: "error", message: "User name not found" });
+//     }
+
+//     console.log("📌 ชื่อผู้บิด:", userName);
+
+//     // ✅ อ่าน email จากคุกกี้
+//     const token = req.cookies?.accessToken || req.headers.authorization?.split(" ")[1];
+//     console.log("📌 Token ที่ใช้:", token);
+
+//     if (!token) {
+//       return res.status(401).send({ status: "error", message: "Unauthorized: No token found" });
+//     }
+
+//     const bidderEmail = req.cookies?.email ? decodeURIComponent(req.cookies.email) : null;
+//     console.log("📌 ค่าของ bidderEmail:", bidderEmail);
+
+//     if (!bidderEmail) {
+//       console.log("❌ ไม่มีคุกกี้ email");
+//       return res.status(400).send({ status: "error", message: "User email not found in cookies" });
+//     }
+
+//     // ✅ สร้างการบิดใหม่
+//     const bid = new Bid({
+//       auction: auction._id,
+//       userName: userName, // ✅ ใช้ `userName` ที่กำหนดไว้
+//       user: req.user.userId,
+//       amount
+//     });
+
+//     // ✅ แจ้งเตือนผู้ใช้ที่ถูกแซงในการประมูล
+//     if (auction.highestBidder && auction.highestBidder.toString() !== userId) {
+//       const existingNotification = await Notification.findOne({
+//         user: auction.highestBidder,
+//         message: { $regex: new RegExp(`มีผู้ประมูลสูงกว่าคุณใน "${auction.name}"`), $options: "i" },
+//         type: "outbid_warning"
+//       });
+  
+//       if (!existingNotification) {
+//         await Notification.create({
+//           user: auction.highestBidder,
+//           message: `⚠️ มีผู้ประมูลสูงกว่าคุณใน "${auction.name}"`,
+//           type: "outbid_warning"
+//         });
+//       }
+//     }
+
+//     // ✅ แจ้งเตือนให้กับผู้ที่บิดใหม่ (ถ้ายังไม่เคยได้รับ)
+//     const bidSuccessNotification = await Notification.findOne({
+//       user: userId,
+//       message: { $regex: new RegExp(`บิดประมูล "${auction.name}"`), $options: "i" },
+//       type: "bid_success"
+//     });
+
+//     if (!bidSuccessNotification) {
+//       await Notification.create({
+//         user: userId,
+//         message: `🎯 คุณได้ทำการบิดประมูล "${auction.name}" สำเร็จแล้ว!`,
+//         type: "bid_success"
+//       });
+//     }
+
+//     // ✅ อัปเดต Auction ให้เก็บข้อมูลของผู้บิดสูงสุด
+//     auction.currentPrice = amount;
+//     auction.highestBidder = req.user.userId;
+//     auction.highestBidderEmail = bidderEmail; // ✅ บันทึกอีเมลจากคุกกี้
+//     auction.highestBidderName = userName; // ✅ ใช้ `userName` ที่ถูกกำหนดแล้ว
+//     auction.bids.push(bid._id);
+
+//     await auction.save();
+//     await bid.save();
+
+//     console.log("✅ อัปเดต highestBidderName สำเร็จ:", userName);
+
+//     res.status(201).send({ status: "success", data: { auction, bid } });
+//   } catch (err) {
+//     console.error("❌ Error placing bid:", err);
+//     res.status(500).send({ status: "error", message: err.message });
+//   }
+// };
+
 exports.placeBid = async (req, res) => {
   try {
     console.log("📌 คุกกี้ทั้งหมดที่ได้รับ:", req.cookies);
@@ -565,7 +672,17 @@ exports.placeBid = async (req, res) => {
     const userId = req.user?.userId;
 
     const auction = await Auction.findById(id);
-    if (!auction) return res.status(404).send({ status: "error", message: "Auction not found" });
+    if (!auction) {
+      return res.status(404).send({ status: "error", message: "Auction not found" });
+    }
+
+    // ❌ ป้องกันการบิดต่อกันโดยผู้ใช้เดิม
+    if (auction.highestBidder && auction.highestBidder.toString() === userId) {
+      return res.status(400).send({ 
+        status: "error", 
+        message: "คุณไม่สามารถบิดต่อกันเองได้ กรุณารอให้มีผู้ใช้คนอื่นบิดก่อน" 
+      });
+    }
 
     if (amount < auction.currentPrice + auction.minimumBidIncrement) {
       return res.status(400).send({ status: "error", message: "Bid too low" });
@@ -579,7 +696,6 @@ exports.placeBid = async (req, res) => {
 
     let userProfile = await Profile.findOne({ user: userId }, "name");
 
-    // ✅ ตรวจสอบและกำหนดค่าของ `userName`
     const userName = userProfile?.name || user?.name;
     if (!userName) {
       console.error("❌ Error: User name not found");
@@ -588,7 +704,6 @@ exports.placeBid = async (req, res) => {
 
     console.log("📌 ชื่อผู้บิด:", userName);
 
-    // ✅ อ่าน email จากคุกกี้
     const token = req.cookies?.accessToken || req.headers.authorization?.split(" ")[1];
     console.log("📌 Token ที่ใช้:", token);
 
@@ -607,7 +722,7 @@ exports.placeBid = async (req, res) => {
     // ✅ สร้างการบิดใหม่
     const bid = new Bid({
       auction: auction._id,
-      userName: userName, // ✅ ใช้ `userName` ที่กำหนดไว้
+      userName: userName,
       user: req.user.userId,
       amount
     });
@@ -619,7 +734,7 @@ exports.placeBid = async (req, res) => {
         message: { $regex: new RegExp(`มีผู้ประมูลสูงกว่าคุณใน "${auction.name}"`), $options: "i" },
         type: "outbid_warning"
       });
-  
+
       if (!existingNotification) {
         await Notification.create({
           user: auction.highestBidder,
@@ -647,8 +762,8 @@ exports.placeBid = async (req, res) => {
     // ✅ อัปเดต Auction ให้เก็บข้อมูลของผู้บิดสูงสุด
     auction.currentPrice = amount;
     auction.highestBidder = req.user.userId;
-    auction.highestBidderEmail = bidderEmail; // ✅ บันทึกอีเมลจากคุกกี้
-    auction.highestBidderName = userName; // ✅ ใช้ `userName` ที่ถูกกำหนดแล้ว
+    auction.highestBidderEmail = bidderEmail;
+    auction.highestBidderName = userName;
     auction.bids.push(bid._id);
 
     await auction.save();
