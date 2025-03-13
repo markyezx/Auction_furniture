@@ -295,7 +295,7 @@ exports.createAuction = async (req, res) => {
       startingPrice,
       currentPrice: startingPrice,
       minimumBidIncrement,
-      expiresAt: new Date(Date.now() +  60 * 1000),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       owner: userId,
       category,
       seller: sellerInfo // ✅ เพิ่มข้อมูลผู้ขาย
@@ -303,6 +303,19 @@ exports.createAuction = async (req, res) => {
 
     await auction.save();
     res.status(201).send({ status: "success", data: auction });
+
+        // ✅ แจ้งเตือนผู้ใช้ทุกคนว่ามีสินค้าใหม่ลงทะเบียน (ยกเว้นเจ้าของสินค้า)
+        const allUsers = await User.find({ _id: { $ne: userId } }, "_id"); // ดึงผู้ใช้ทั้งหมด ยกเว้นเจ้าของ
+        if (allUsers.length > 0) {
+          const notifications = allUsers.map(user => ({
+            user: user._id,
+            message: `🆕 มีสินค้าประมูลใหม่: "${auction.name}"`,
+            type: "new_auction"
+          }));
+    
+          await Notification.insertMany(notifications);
+          console.log(`📢 แจ้งเตือนสินค้าใหม่ "${auction.name}" ให้ผู้ใช้ ${allUsers.length} คน`);
+        }
 
   } catch (err) {
     console.error("❌ Error creating auction:", err);

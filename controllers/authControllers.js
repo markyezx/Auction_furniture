@@ -126,7 +126,7 @@ const register = async (req, res) => {
 
           const link = `${process.env.BASE_URL}/api/v1/accounts/verify/email?email=${email}&ref=${refKey}&token=${activationToken}`;
 
-          await sendEmail(email, "Verify Email For Healworld.me", link);
+          await sendEmail(email, "Verify Email For ToyAuction", link);
 
           res.status(201).send({
             status: "success",

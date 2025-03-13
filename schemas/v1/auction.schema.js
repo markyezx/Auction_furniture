@@ -10,7 +10,7 @@ const auctionSchema = new mongoose.Schema({
   expiresAt: { 
     type: Date, 
     required: true, 
-    default: () => new Date(Date.now() + 60 * 1000)  
+    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000)  
   },
   status: { type: String, enum: ["active", "ended"], default: "active" },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
