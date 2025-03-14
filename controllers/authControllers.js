@@ -132,7 +132,7 @@ const MAX_DEVICES = 50;
 
 //           const link = `${process.env.BASE_URL}/api/v1/accounts/verify/email?email=${email}&ref=${refKey}&token=${activationToken}`;
 
-//           await sendEmail(email, "Verify Email For ToyAuction", link);
+//           await sendEmail(email, "Verify Email For FurnitureAuction", link);
 
 //           res.status(201).send({
 //             status: "success",
@@ -202,12 +202,10 @@ const register = async (req, res) => {
     let findUser = await user.findOne({ "user.email": email, businessId });
 
     if (findUser) {
-      return res
-        .status(409)
-        .send({
-          status: "error",
-          message: "User already exists. Please login instead.",
-        });
+      return res.status(409).send({
+        status: "error",
+        message: "User already exists. Please login instead.",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -442,12 +440,10 @@ const login = async (req, res, next) => {
       async (err, foundUser, info) => {
         if (err) return next(err);
         if (!foundUser)
-          return res
-            .status(401)
-            .json({
-              status: "error",
-              message: info?.message || "Unauthorized",
-            });
+          return res.status(401).json({
+            status: "error",
+            message: info?.message || "Unauthorized",
+          });
 
         const accessToken = generateToken(
           { userId: foundUser._id },

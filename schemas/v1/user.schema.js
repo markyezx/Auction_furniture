@@ -15,7 +15,7 @@ const UserSchema = new mongoose.Schema(
         match: /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/,
       },
       phone: { type: String, trim: true },
-      password: { type: String, required: true, select: false},
+      password: { type: String, required: true, select: false },
       token: { type: String },
       activated: { type: Boolean, default: false },
       verified: {
@@ -77,7 +77,9 @@ const UserSchema = new mongoose.Schema(
 // ตรวจสอบก่อนบันทึกว่าฟิลด์อีเมลต้องไม่ซ้ำกัน
 UserSchema.pre("save", async function (next) {
   if (!this.isModified("email")) return next();
-  const existingUser = await mongoose.models.User.findOne({ email: this.user.email });
+  const existingUser = await mongoose.models.User.findOne({
+    email: this.user.email,
+  });
   if (existingUser) {
     const error = new Error("Email already exists");
     error.status = 409;

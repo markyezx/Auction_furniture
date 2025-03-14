@@ -85,9 +85,7 @@ app.use(passport.session());
 app.use(cookieParser());
 
 // Cross Origin Resource Sharing
-const whitelist = [
-  "http://localhost:5173",
-];
+const whitelist = ["http://localhost:5173"];
 /*const corsOptions = {
   origin: (origin, callback) => {
     // allow requests with no origin (like mobile apps or curl requests)
@@ -139,10 +137,12 @@ const { endAuctions } = require("./controllers/auctionController");
 
 // รันทุกๆ 1 นาที
 //cron.schedule("*/1 * * * *", async () => {
-  //console.log("🔄 Checking for expired auctions...");
-  //await endAuctions();
+//console.log("🔄 Checking for expired auctions...");
+//await endAuctions();
 //});
-const { handleAuctionNotifications } = require("./controllers/auctionController");
+const {
+  handleAuctionNotifications,
+} = require("./controllers/auctionController");
 const { checkAndEndAuctions } = require("./controllers/auctionController");
 
 // ✅ ให้ `checkAndEndAuctions()` ทำงานทุกๆ 10 วินาที
@@ -151,7 +151,6 @@ setInterval(handleAuctionNotifications, 10000);
 
 // ให้ Express ให้บริการไฟล์รูปจากโฟลเดอร์ 'uploads'
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 
 app.use(express.json()); // ✅ รองรับ JSON body
 app.use(express.urlencoded({ extended: true })); // ✅ รองรับ Form Data

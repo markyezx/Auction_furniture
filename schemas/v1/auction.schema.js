@@ -3,14 +3,18 @@ const mongoose = require("mongoose");
 const auctionSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String, required: true },
-  image: { type: [String], required: true, default: ["https://example.com/default.jpg"] },
+  image: {
+    type: [String],
+    required: true,
+    default: ["https://example.com/default.jpg"],
+  },
   startingPrice: { type: Number, required: true },
   currentPrice: { type: Number, required: true },
   minimumBidIncrement: { type: Number, required: true, default: 10 },
-  expiresAt: { 
-    type: Date, 
-    required: true, 
-    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000)  
+  expiresAt: {
+    type: Date,
+    required: true,
+    default: () => new Date(Date.now() + 24 * 60 * 60 * 1000),
   },
   status: { type: String, enum: ["active", "ended"], default: "active" },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -27,26 +31,32 @@ const auctionSchema = new mongoose.Schema({
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       action: { type: String, enum: ["BID", "UPDATE", "END"] },
       amount: Number,
-      timestamp: { type: Date, default: Date.now }
-    }
+      timestamp: { type: Date, default: Date.now },
+    },
   ],
-  category: { 
-    type: String, 
+  category: {
+    type: String,
     enum: [
-      "designer_toys", "vinyl_figures", "resin_figures", "blind_box",
-      "anime_figures", "movie_game_collectibles", "robot_mecha",
-      "soft_vinyl", "kaiju_monsters", "diy_custom", "retro_vintage",
-      "limited_edition", "gunpla_models", "plastic_models"
-    ], 
-    required: true 
-  }, 
+      "chair",
+      "sofas_and_armchairs",
+      "table",
+      "cupboard",
+      "bad",
+      "counter",
+      "office_furniture",
+      "kitchenware_and_freezer",
+      "door",
+      "home_decoration",
+    ],
+    required: true,
+  },
 
-   // ✅ **เพิ่ม `phone` เข้าไปในข้อมูลผู้ขาย**
-   seller: {
+  // ✅ **เพิ่ม `phone` เข้าไปในข้อมูลผู้ขาย**
+  seller: {
     name: { type: String },
     email: { type: String },
-    phone: { type: String },  // ✅ เพิ่มฟิลด์ `phone`
-    profileImage: { type: String }
+    phone: { type: String }, // ✅ เพิ่มฟิลด์ `phone`
+    profileImage: { type: String },
   },
   createdAt: { type: Date, default: Date.now },
 });
